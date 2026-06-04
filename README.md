@@ -1,0 +1,203 @@
+# Rust Math
+
+Ishxonadagi mahsulot uzunligini hisoblash uchun kichik Rust kalkulyator.
+
+Kod Excel/Google Sheets qatoridagi quyidagi ustunlarga qarab uzunlik hisoblaydi:
+
+- `KG`
+- `RAZMER`
+- `1 QAVAT`
+- `1 MIKRON`
+- `2 QAVAT`
+- `2 MIKRON`
+
+## Formula
+
+Asosiy formula:
+
+```text
+uzunlik = KG / ((1-qavat koeffitsienti + 2-qavat koeffitsienti) * RAZMER_SM) * 6000
+```
+
+Keyin natijaga atxod qo'shiladi:
+
+```text
+atxod = uzunlik * 5%
+yakuniy = uzunlik + atxod
+```
+
+Oxirida yakuniy uzunlik 500 ga yuqoriga yaxlitlanadi.
+
+Masalan `1178` qator:
+
+```text
+KG = 300
+RAZMER = 530 mm = 53 sm
+1 QAVAT = pet, 1 MIKRON = 12  => 1
+2 QAVAT = pe pr, 2 MIKRON = 30 => 2
+
+1 + 2 = 3
+3 * 53 = 159
+300 / 159 * 6000 = 11321
+11321 * 5% = 566
+11321 + 566 = 11887
+500 ga yuqoriga yaxlitlash = 12000
+```
+
+## Material Qoidalari
+
+### 1-qavat
+
+`pet`, `opp`, `popp`, `mat` materiallari 1-qavat oilasi hisoblanadi.
+
+Agar ularning mikroni `20` yoki undan kichik bo'lsa, koeffitsient `1` olinadi.
+
+```text
+pet 12 => 1
+mat 20 => 1
+opp 18 => 1
+```
+
+Agar shu oiladagi material 20 dan katta mikronda kelsa, hozircha `MCP/CPP` jadvalidan olinadi.
+
+### 2-qavat
+
+2-qavat uchun koeffitsient material oilasi va mikron orqali jadvaldan olinadi.
+
+`pe` bilan boshlanadigan materiallar `PE` oilasi:
+
+```text
+pe pr 30 => PE 30 => 2
+pe oq 55 => PE 55 => 3.6
+```
+
+`cpp` yoki `mcp` bilan boshlanadigan materiallar `MCP/CPP` oilasi:
+
+```text
+cpp 45 => MCP/CPP 45 => 2.7
+```
+
+`oppm` hozir `opp` oilasi deb olinadi va 2-qavatda `MCP/CPP` jadvali orqali hisoblanadi:
+
+```text
+oppm 25/30 => 30 olinadi => MCP/CPP 30 => 1.6
+oppm 20 => MCP/CPP 20 => 1.07
+```
+
+### Slash bilan yozilgan mikronlar
+
+Mikron `18/20` yoki `25/30` shaklida yozilsa, kattasi olinadi:
+
+```text
+18/20 => 20
+25/30 => 30
+```
+
+### Twist / Tuisim
+
+`twist` yoki `tuisim` odatda faqat 1-qavatga yoziladi va 2-qavati bo'lmaydi.
+
+Bu holatda umumiy koeffitsient `2` deb olinadi:
+
+```text
+tuisim 23, 2-qavat -- => 2 + 0
+```
+
+## Koeffitsient Jadvali
+
+### MCP/CPP
+
+| Mikron | Koeffitsient |
+|---:|---:|
+| 20 | 1.07 |
+| 25 | 1.3 |
+| 30 | 1.6 |
+| 35 | 2 |
+| 40 | 2.15 |
+| 45 | 2.7 |
+| 50 | 2.8 |
+| 60 | 3.2 |
+
+### JEM
+
+| Mikron | Koeffitsient |
+|---:|---:|
+| 25 | 1 |
+| 30 | 1.5 |
+
+### PE
+
+| Mikron | Koeffitsient |
+|---:|---:|
+| 30 | 2 |
+| 35 | 2.3 |
+| 40 | 2.6 |
+| 45 | 3 |
+| 50 | 3.3 |
+| 55 | 3.6 |
+| 60 | 4 |
+| 65 | 4.3 |
+| 70 | 4.6 |
+| 75 | 5 |
+| 80 | 5.3 |
+| 85 | 5.6 |
+| 90 | 6 |
+
+## Ishga Tushirish
+
+Rust o'rnatilgan bo'lishi kerak.
+
+```bash
+cargo run
+```
+
+Parametr bilan:
+
+```bash
+cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 "pe pr" --m2 30
+```
+
+Natija:
+
+```text
+yakuniy uzunlik: 12000
+```
+
+## Demo Qatorlar
+
+Rasmdagi test qatorlarni hisoblatish:
+
+```bash
+cargo run -- --demo
+```
+
+Misol natijalar:
+
+```text
+1178    12000
+1179    11500
+1183    63500
+1185    199000
+1186    69000
+```
+
+`1185` twist/tuisim qatori 5% atxod bilan `199000` chiqadi. Agar amaldagi Excelda `195000` bo'lsa, twist uchun atxod/yaxlitlash qoidasi alohida aniqlanishi kerak.
+
+## Test
+
+```bash
+cargo test
+```
+
+Testlar quyidagilarni tekshiradi:
+
+- `1178` qator `12000` chiqishi
+- `pe pr` PE oilasi sifatida olinishi
+- `pet` 20 dan katta bo'lsa `MCP/CPP` jadvaliga tushishi
+- `tuisim` 2-qavatsiz hisoblanishi
+
+## Hozircha Aniqlashtirilishi Kerak Bo'lgan Joylar
+
+- `twist/tuisim` uchun atxod har doim 5% bo'ladimi yoki boshqa qoida bormi?
+- 2-qavat `--` bo'lgan boshqa materiallar qanday hisoblanadi?
+- Excel faylni to'g'ridan-to'g'ri o'qish kerakmi yoki CSV orqali ishlash yetarlimi?
