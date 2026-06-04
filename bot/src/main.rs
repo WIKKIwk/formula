@@ -2,6 +2,7 @@ mod calc;
 mod config;
 mod formatter;
 mod handlers;
+mod material_parser;
 mod order;
 mod registry;
 mod state;

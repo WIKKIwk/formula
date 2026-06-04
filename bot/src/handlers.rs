@@ -1,6 +1,7 @@
 use crate::calc::calculate_order;
 use crate::config::Config;
 use crate::formatter::{calc_message, order_message};
+use crate::material_parser::parse_material_layers;
 use crate::order::OrderDraft;
 use crate::registry::{ChatRole, RegistryStore};
 use crate::state::{LoginSessions, LoginStep, Sessions, Step};
@@ -279,7 +280,15 @@ fn apply_answer(
         Step::Customer => set_text(&mut draft.customer, value),
         Step::Product => set_text(&mut draft.product, value),
         Step::Status => set_text(&mut draft.status, value),
-        Step::MaterialDisplay => set_text(&mut draft.material_display, value),
+        Step::MaterialDisplay => {
+            if let Err(error) = set_text(&mut draft.material_display, value.clone()) {
+                return Flow::Error(error);
+            }
+            if let Some(value) = value {
+                apply_material_display(draft, &value);
+            }
+            Ok(())
+        }
         Step::Color => set_text(&mut draft.color, value),
         Step::Kg => set_number(&mut draft.kg, value, "Tiraj kg"),
         Step::Width => set_number(&mut draft.width_mm, value, "Uzunligi mm"),
@@ -324,6 +333,7 @@ fn advance_step(draft: &OrderDraft, step: &mut Step) {
         Step::MaterialDisplay => Step::Color,
         Step::Color => Step::Kg,
         Step::Kg => Step::Width,
+        Step::Width if draft.first_material.is_some() => Step::Note,
         Step::Width => Step::FirstMaterial,
         Step::FirstMaterial => Step::FirstMicron,
         Step::FirstMicron => Step::SecondMaterial,
@@ -363,9 +373,12 @@ fn set_number(slot: &mut Option<f64>, value: Option<String>, name: &str) -> Resu
     let Some(value) = value else {
         return Err(format!("{name} bo'sh bo'lmasligi kerak."));
     };
-    let number = value
-        .replace(' ', "")
-        .replace(',', ".")
+    let number_text = value
+        .chars()
+        .filter(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ','))
+        .collect::<String>()
+        .replace(',', ".");
+    let number = number_text
         .parse::<f64>()
         .map_err(|_| format!("{name} raqam bo'lishi kerak."))?;
     if number <= 0.0 {
@@ -373,6 +386,31 @@ fn set_number(slot: &mut Option<f64>, value: Option<String>, name: &str) -> Resu
     }
     *slot = Some(number);
     Ok(())
+}
+
+fn apply_material_display(draft: &mut OrderDraft, value: &str) {
+    let layers = parse_material_layers(value);
+    if layers.is_empty() {
+        return;
+    }
+    draft.first_material = Some(layers[0].0.clone());
+    draft.first_micron = Some(layers[0].1.clone());
+
+    if let Some((material, micron)) = layers.get(1) {
+        draft.second_material = Some(material.clone());
+        draft.second_micron = Some(micron.clone());
+    } else {
+        draft.second_material = None;
+        draft.second_micron = None;
+    }
+
+    if let Some((material, micron)) = layers.get(2) {
+        draft.third_material = Some(material.clone());
+        draft.third_micron = Some(micron.clone());
+    } else {
+        draft.third_material = None;
+        draft.third_micron = None;
+    }
 }
 
 fn normalize_empty(text: &str) -> Option<String> {
