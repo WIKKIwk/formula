@@ -31,7 +31,7 @@ impl BotRegistry {
     }
 
     pub fn is_ready(&self) -> bool {
-        self.order_chat_id.is_some() && self.calc_chat_id.is_some()
+        self.order_chat_id.is_some() && self.calc_chat_id.is_some() && self.admin_chat_id.is_some()
     }
 
     pub fn set_role(&mut self, role: ChatRole, chat_id: i64) {

@@ -50,6 +50,7 @@ impl BotApp {
         };
         let chat_id = message.chat.id;
         let message_id = message.message_id;
+        let photo_file_id = largest_photo_file_id(&message.photo);
         let text = message.text.unwrap_or_default();
         let trimmed = text.trim();
 
@@ -81,6 +82,15 @@ impl BotApp {
         }
 
         if matches!(trimmed, "/start" | "/new" | "new" | "yangi") {
+            if !self.is_admin_chat(chat_id) {
+                self.telegram
+                    .send_message(
+                        chat_id,
+                        "Buyurtma faqat admin chatdan qabul qilinadi. Admin chatni /login orqali ulang.",
+                    )
+                    .await?;
+                return Ok(());
+            }
             let prompt = self.sessions.start(chat_id);
             self.telegram.send_message(chat_id, prompt).await?;
             return Ok(());
@@ -94,6 +104,9 @@ impl BotApp {
         }
 
         if self.sessions.get_mut(chat_id).is_none() {
+            if !self.is_admin_chat(chat_id) {
+                return Ok(());
+            }
             let prompt = self.sessions.start(chat_id);
             self.telegram.send_message(chat_id, prompt).await?;
             return Ok(());
@@ -101,7 +114,12 @@ impl BotApp {
 
         let outcome = {
             let session = self.sessions.get_mut(chat_id).expect("session exists");
-            apply_answer(&mut session.draft, &mut session.step, trimmed)
+            apply_answer(
+                &mut session.draft,
+                &mut session.step,
+                trimmed,
+                photo_file_id,
+            )
         };
 
         match outcome {
@@ -184,9 +202,16 @@ impl BotApp {
                     .value()
                     .calc_chat_id
                     .expect("checked by setup mode");
-                self.telegram
-                    .send_message(order_chat_id, &order_message(&order)?)
-                    .await?;
+                let order_text = order_message(&order)?;
+                if let Some(photo_file_id) = order.photo_file_id.as_deref() {
+                    self.telegram
+                        .send_photo(order_chat_id, photo_file_id, &order_text)
+                        .await?;
+                } else {
+                    self.telegram
+                        .send_message(order_chat_id, &order_text)
+                        .await?;
+                }
                 self.telegram
                     .send_message(calc_chat_id, &calc_message(&order, &result)?)
                     .await?;
@@ -208,11 +233,15 @@ impl BotApp {
         }
         Ok(())
     }
+
+    fn is_admin_chat(&self, chat_id: i64) -> bool {
+        self.registry.value().admin_chat_id == Some(chat_id)
+    }
 }
 
 fn setup_message(chat_id: i64) -> String {
     format!(
-        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\nRole ulash uchun /login yozing."
+        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\nMa'lumot guruhi, hisob guruhi va admin chatni /login orqali ulang."
     )
 }
 
@@ -222,7 +251,12 @@ enum Flow {
     Error(String),
 }
 
-fn apply_answer(draft: &mut OrderDraft, step: &mut Step, text: &str) -> Flow {
+fn apply_answer(
+    draft: &mut OrderDraft,
+    step: &mut Step,
+    text: &str,
+    photo_file_id: Option<String>,
+) -> Flow {
     let value = normalize_empty(text);
     let result = match *step {
         Step::OrderNumber => set_text(&mut draft.order_number, value),
@@ -243,7 +277,18 @@ fn apply_answer(draft: &mut OrderDraft, step: &mut Step, text: &str) -> Flow {
             if let Err(error) = set_optional_text(&mut draft.note, value) {
                 return Flow::Error(error);
             }
-            return Flow::Done(draft.clone());
+            advance_step(draft, step);
+            return Flow::Ask(step.next_prompt());
+        }
+        Step::Photo => {
+            if let Some(photo_file_id) = photo_file_id {
+                draft.photo_file_id = Some(photo_file_id);
+                return Flow::Done(draft.clone());
+            }
+            if value.is_none() {
+                return Flow::Done(draft.clone());
+            }
+            return Flow::Error("Rasm yuboring yoki '-' yozing.".to_string());
         }
     };
 
@@ -272,8 +317,17 @@ fn advance_step(draft: &OrderDraft, step: &mut Step) {
         Step::ThirdMaterial if draft.third_material.is_none() => Step::Note,
         Step::ThirdMaterial => Step::ThirdMicron,
         Step::ThirdMicron => Step::Note,
-        Step::Note => Step::Note,
+        Step::Note => Step::Photo,
+        Step::Photo => Step::Photo,
     };
+}
+
+fn largest_photo_file_id(photos: &Option<Vec<crate::telegram::PhotoSize>>) -> Option<String> {
+    photos
+        .as_ref()?
+        .iter()
+        .max_by_key(|photo| photo.file_size.unwrap_or(photo.width * photo.height))
+        .map(|photo| photo.file_id.clone())
 }
 
 fn set_text(slot: &mut Option<String>, value: Option<String>) -> Result<(), String> {

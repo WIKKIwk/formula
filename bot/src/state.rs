@@ -25,6 +25,7 @@ pub enum Step {
     ThirdMaterial,
     ThirdMicron,
     Note,
+    Photo,
 }
 
 #[derive(Default)]
@@ -112,6 +113,7 @@ impl Step {
             Step::ThirdMaterial => "3-qavat material? Bo'sh bo'lsa '-' yozing",
             Step::ThirdMicron => "3-qavat mikron?",
             Step::Note => "Eslatma? Bo'sh bo'lsa '-' yozing",
+            Step::Photo => "Rasm yuboring. Rasm bo'lmasa '-' yozing",
             Step::OrderNumber => "Buyurtma raqamini yozing.",
         }
     }

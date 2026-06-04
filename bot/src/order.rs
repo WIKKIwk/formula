@@ -16,6 +16,7 @@ pub struct OrderDraft {
     pub third_material: Option<String>,
     pub third_micron: Option<String>,
     pub note: Option<String>,
+    pub photo_file_id: Option<String>,
 }
 
 impl OrderDraft {

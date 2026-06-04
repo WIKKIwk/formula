@@ -324,9 +324,9 @@ Bitta qavat bo'sh bo'lsa `--`, u 0 deb olinadi. Masalan 1-qavat bo'sh, 2-qavat `
 
 ## Telegram Bot
 
-Bot alohida `bot/` papkada turadi. U buyurtma ma'lumotlarini savol-javob qilib yig'adi:
+Bot alohida `bot/` papkada turadi. U admin private chatdan buyurtma ma'lumotlarini savol-javob qilib yig'adi:
 
-- bitta guruhga screenshotdagi kabi chiroyli buyurtma matnini yuboradi;
+- bitta guruhga screenshotdagi kabi rasm va chiroyli buyurtma matnini yuboradi;
 - ikkinchi guruhga hisob-kitob va yakuniy uzunlikni yuboradi.
 
 Kerakli env:
@@ -355,11 +355,11 @@ Bot bilan ishlash:
 /login   guruh/chat rolini ulaydi
 ```
 
-`/login` setup role ulash uchun ishlatiladi. Login/parollar bot xabarlarida ko'rsatilmaydi.
+`/login` setup role ulash uchun ishlatiladi. Ma'lumot guruhi, hisob guruhi va admin chat alohida ulanadi. Login/parollar bot xabarlarida ko'rsatilmaydi.
 
 Bot login va parol xabarlarini o'chiradi. Prompt xabarini `Login yozing` -> `Parol yozing` -> `Qabul qilindi: ...` qilib edit qiladi. Rolelar `bot_state.json`ga saqlanadi.
 
-Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, 1/2/3-qavat material va mikronlari, eslatma. 2 yoki 3-qavat kerak bo'lmasa `-` yoziladi.
+Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, 1/2/3-qavat material va mikronlari, eslatma va rasm. 2 yoki 3-qavat kerak bo'lmasa `-` yoziladi. Rasm yuborilsa ma'lumot guruhiga caption bilan tushadi, rasm bo'lmasa rasm bosqichida `-` yoziladi.
 
 ## Demo Qatorlar
 

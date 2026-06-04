@@ -24,6 +24,7 @@ pub struct Message {
     pub message_id: i64,
     pub chat: Chat,
     pub text: Option<String>,
+    pub photo: Option<Vec<PhotoSize>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,10 +32,26 @@ pub struct Chat {
     pub id: i64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PhotoSize {
+    pub file_id: String,
+    pub width: i64,
+    pub height: i64,
+    pub file_size: Option<i64>,
+}
+
 #[derive(Debug, Serialize)]
 struct SendMessage<'a> {
     chat_id: i64,
     text: &'a str,
+    parse_mode: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct SendPhoto<'a> {
+    chat_id: i64,
+    photo: &'a str,
+    caption: &'a str,
     parse_mode: &'a str,
 }
 
@@ -109,6 +126,35 @@ impl TelegramClient {
         let response = response.json::<ApiResponse<SentMessage>>().await?;
         if !response.ok {
             return Err("Telegram sendMessage ok=false".into());
+        }
+        Ok(response.result.message_id)
+    }
+
+    pub async fn send_photo(
+        &self,
+        chat_id: i64,
+        photo: &str,
+        caption: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+        let payload = SendPhoto {
+            chat_id,
+            photo,
+            caption,
+            parse_mode: "HTML",
+        };
+        let response = self
+            .client
+            .post(self.url("sendPhoto"))
+            .json(&payload)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram sendPhoto HTTP status: {status}").into());
+        }
+        let response = response.json::<ApiResponse<SentMessage>>().await?;
+        if !response.ok {
+            return Err("Telegram sendPhoto ok=false".into());
         }
         Ok(response.result.message_id)
     }
