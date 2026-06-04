@@ -212,7 +212,7 @@ impl BotApp {
 
 fn setup_message(chat_id: i64) -> String {
     format!(
-        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\n/login yozing va role ulang:\nma'lumot guruhi: guruh / @#12asn\nhisob guruhi: hisob / @#12hsb\nadmin chat: chat / @#12"
+        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\nRole ulash uchun /login yozing."
     )
 }
 

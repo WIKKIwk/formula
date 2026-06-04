@@ -355,21 +355,7 @@ Bot bilan ishlash:
 /login   guruh/chat rolini ulaydi
 ```
 
-`/login` setup:
-
-```text
-ma'lumot tashlaydigan guruh:
-login: guruh
-parol: @#12asn
-
-hisob-kitob guruhi:
-login: hisob
-parol: @#12hsb
-
-admin private chat:
-login: chat
-parol: @#12
-```
+`/login` setup role ulash uchun ishlatiladi. Login/parollar bot xabarlarida ko'rsatilmaydi.
 
 Bot login va parol xabarlarini o'chiradi. Prompt xabarini `Login yozing` -> `Parol yozing` -> `Qabul qilindi: ...` qilib edit qiladi. Rolelar `bot_state.json`ga saqlanadi.
 
