@@ -423,19 +423,15 @@ fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Resu
         return Ok(1.0);
     }
 
-    match family {
+    let coefficient = match family {
         MaterialFamily::FirstLayer | MaterialFamily::McpCpp => mcp_cpp_coefficient(micron),
         MaterialFamily::Jem => jem_coefficient(micron),
         MaterialFamily::Pe => pe_coefficient(micron),
         MaterialFamily::Twist => Some(2.0),
         MaterialFamily::Empty => None,
-    }
-    .ok_or_else(|| {
-        format!(
-            "'{}' materiali uchun {} mikron jadvalda topilmadi",
-            material, micron
-        )
-    })
+    };
+
+    coefficient.ok_or_else(|| coefficient_error(material, micron, family))
 }
 
 fn material_family(material: &str) -> Result<MaterialFamily, String> {
@@ -1057,6 +1053,21 @@ fn mcp_cpp_coefficient(micron: u32) -> Option<f64> {
         60 => Some(3.2),
         _ => None,
     }
+}
+
+fn coefficient_error(material: &str, micron: u32, family: MaterialFamily) -> String {
+    let available = match family {
+        MaterialFamily::FirstLayer | MaterialFamily::McpCpp => "20, 25, 30, 35, 40, 45, 50, 60",
+        MaterialFamily::Jem => "25, 30",
+        MaterialFamily::Pe => "30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90",
+        MaterialFamily::Twist => "twist/tuisim uchun mikron jadvali ishlatilmaydi",
+        MaterialFamily::Empty => "bo'sh material",
+    };
+
+    format!(
+        "'{}' materiali uchun {} mikron jadvalda topilmadi. Bu material oilasida bor mikronlar: {}",
+        material, micron, available
+    )
 }
 
 fn jem_coefficient(micron: u32) -> Option<f64> {
