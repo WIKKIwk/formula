@@ -14,6 +14,7 @@ enum MaterialFamily {
 #[derive(Debug)]
 struct Layer<'a> {
     material: &'a str,
+    micron_text: &'a str,
     micron: u32,
 }
 
@@ -75,12 +76,18 @@ fn calculation_from_args(args: &[String]) -> Result<Calculation<'static>, String
     let kg = read_number(args, "--kg")?;
     let razmer_mm = read_number(args, "--razmer")?;
     let first_material = read_text(args, "--q1")?;
-    let first_micron = read_micron(args, "--m1")?;
+    let first_micron_text = read_text(args, "--m1")?;
+    let first_micron = parse_micron(&first_micron_text)?;
     let second_material = read_text(args, "--q2")?;
     let second_micron = if is_empty_material(&second_material) {
         0
     } else {
         read_micron(args, "--m2")?
+    };
+    let second_micron_text = if is_empty_material(&second_material) {
+        "--".to_string()
+    } else {
+        read_text(args, "--m2")?
     };
     let waste_percent = read_optional_number(args, "--waste")?.unwrap_or(5.0);
     let round_to = read_optional_number(args, "--round")?.unwrap_or(500.0);
@@ -90,10 +97,12 @@ fn calculation_from_args(args: &[String]) -> Result<Calculation<'static>, String
         razmer_mm,
         first_layer: Layer {
             material: Box::leak(first_material.into_boxed_str()),
+            micron_text: Box::leak(first_micron_text.into_boxed_str()),
             micron: first_micron,
         },
         second_layer: Layer {
             material: Box::leak(second_material.into_boxed_str()),
+            micron_text: Box::leak(second_micron_text.into_boxed_str()),
             micron: second_micron,
         },
         waste_percent,
@@ -107,10 +116,12 @@ fn example_1178() -> Calculation<'static> {
         razmer_mm: 530.0,
         first_layer: Layer {
             material: "pet",
+            micron_text: "12",
             micron: 12,
         },
         second_layer: Layer {
             material: "pe pr",
+            micron_text: "30",
             micron: 30,
         },
         waste_percent: 5.0,
@@ -131,12 +142,12 @@ fn calculate(calculation: &Calculation<'_>) -> Result<ResultBreakdown, String> {
 
     let first_family = material_family(calculation.first_layer.material)?;
     let second_family = material_family(calculation.second_layer.material)?;
-    let first_coeff = coefficient(&calculation.first_layer)?;
+    let first_coeff = coefficient_cell(&calculation.first_layer, true)?;
     let second_coeff =
         if first_family == MaterialFamily::Twist && second_family == MaterialFamily::Empty {
             0.0
         } else {
-            coefficient(&calculation.second_layer)?
+            coefficient_cell(&calculation.second_layer, false)?
         };
     let coeff_sum = first_coeff + second_coeff;
     let razmer_sm = calculation.razmer_mm / 10.0;
@@ -159,24 +170,46 @@ fn calculate(calculation: &Calculation<'_>) -> Result<ResultBreakdown, String> {
     })
 }
 
-fn coefficient(layer: &Layer<'_>) -> Result<f64, String> {
-    let family = material_family(layer.material)?;
+fn coefficient_cell(layer: &Layer<'_>, is_first_layer: bool) -> Result<f64, String> {
+    let materials = split_materials(layer.material);
+    let microns = parse_micron_parts(layer.micron_text)?;
 
-    if family == MaterialFamily::FirstLayer && layer.micron <= 20 {
+    if materials.len() == 1 {
+        return coefficient_single(materials[0], layer.micron, is_first_layer);
+    }
+
+    if materials.len() != microns.len() {
+        return Err(format!(
+            "material va mikron soni mos emas: '{}' va '{}'",
+            layer.material, layer.micron_text
+        ));
+    }
+
+    materials
+        .iter()
+        .zip(microns)
+        .map(|(material, micron)| coefficient_single(material, micron, is_first_layer))
+        .sum()
+}
+
+fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Result<f64, String> {
+    let family = material_family(material)?;
+
+    if is_first_layer && family == MaterialFamily::FirstLayer && micron <= 20 {
         return Ok(1.0);
     }
 
     match family {
-        MaterialFamily::FirstLayer | MaterialFamily::McpCpp => mcp_cpp_coefficient(layer.micron),
-        MaterialFamily::Jem => jem_coefficient(layer.micron),
-        MaterialFamily::Pe => pe_coefficient(layer.micron),
+        MaterialFamily::FirstLayer | MaterialFamily::McpCpp => mcp_cpp_coefficient(micron),
+        MaterialFamily::Jem => jem_coefficient(micron),
+        MaterialFamily::Pe => pe_coefficient(micron),
         MaterialFamily::Twist => Some(2.0),
         MaterialFamily::Empty => None,
     }
     .ok_or_else(|| {
         format!(
             "'{}' materiali uchun {} mikron jadvalda topilmadi",
-            layer.material, layer.micron
+            material, micron
         )
     })
 }
@@ -213,6 +246,14 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
 fn is_empty_material(material: &str) -> bool {
     let normalized = material.trim();
     normalized.is_empty() || normalized == "--"
+}
+
+fn split_materials(material: &str) -> Vec<&str> {
+    material
+        .split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 fn mcp_cpp_coefficient(micron: u32) -> Option<f64> {
@@ -279,6 +320,7 @@ fn run_demo_rows() {
         ("1192", 400.0, 815.0, "pet", "12", "pe pr", "65"),
         ("1193", 1000.0, 975.0, "pet", "12", "cpp", "35"),
         ("1194", 600.0, 765.0, "pet", "12", "cpp", "20"),
+        ("1207", 3000.0, 635.0, "pet", "12", "oppm/pe pr", "20/30"),
     ];
 
     println!("KOD\tKG\tRAZMER\t1Q\t1M\t2Q\t2M\tUZUNLIK");
@@ -308,10 +350,12 @@ fn run_demo_rows() {
             razmer_mm,
             first_layer: Layer {
                 material: q1,
+                micron_text: m1,
                 micron: first_micron,
             },
             second_layer: Layer {
                 material: q2,
+                micron_text: m2,
                 micron: second_micron,
             },
             waste_percent: 5.0,
@@ -377,15 +421,33 @@ fn parse_micron(value: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("micron qiymati noto'g'ri: '{value}'"))
 }
 
+fn parse_micron_parts(value: &str) -> Result<Vec<u32>, String> {
+    let normalized = value.trim();
+    if normalized == "--" || normalized.is_empty() {
+        return Err(format!("micron qiymati noto'g'ri: '{value}'"));
+    }
+
+    normalized
+        .split('/')
+        .map(|part| {
+            part.trim()
+                .parse::<u32>()
+                .map_err(|_| format!("micron butun raqam bo'lishi kerak: '{value}'"))
+        })
+        .collect()
+}
+
 fn print_result(calculation: &Calculation<'_>, result: &ResultBreakdown) {
     println!("Hisob:");
     println!(
         "1-qavat: {} {} micron => {}",
-        calculation.first_layer.material, calculation.first_layer.micron, result.first_coeff
+        calculation.first_layer.material, calculation.first_layer.micron_text, result.first_coeff
     );
     println!(
         "2-qavat: {} {} micron => {}",
-        calculation.second_layer.material, calculation.second_layer.micron, result.second_coeff
+        calculation.second_layer.material,
+        calculation.second_layer.micron_text,
+        result.second_coeff
     );
     println!(
         "koeffitsient: {} + {} = {}",
@@ -442,20 +504,22 @@ mod tests {
     fn maps_pet_20_or_more_to_mcp_cpp_table() {
         let layer = Layer {
             material: "pet",
+            micron_text: "30",
             micron: 30,
         };
 
-        assert_eq!(coefficient(&layer).unwrap(), 1.6);
+        assert_eq!(coefficient_cell(&layer, true).unwrap(), 1.6);
     }
 
     #[test]
     fn maps_pe_family_by_prefix() {
         let layer = Layer {
             material: "pe pr",
+            micron_text: "30",
             micron: 30,
         };
 
-        assert_eq!(coefficient(&layer).unwrap(), 2.0);
+        assert_eq!(coefficient_cell(&layer, false).unwrap(), 2.0);
     }
 
     #[test]
@@ -465,10 +529,12 @@ mod tests {
             razmer_mm: 475.0,
             first_layer: Layer {
                 material: "tuisim",
+                micron_text: "23",
                 micron: 23,
             },
             second_layer: Layer {
                 material: "--",
+                micron_text: "--",
                 micron: 0,
             },
             waste_percent: 5.0,
@@ -480,5 +546,31 @@ mod tests {
         assert_eq!(result.first_coeff, 2.0);
         assert_eq!(result.second_coeff, 0.0);
         assert_eq!(result.rounded_length, 199000.0);
+    }
+
+    #[test]
+    fn calculates_three_layer_cell_from_second_layer_slash() {
+        let calculation = Calculation {
+            kg: 3000.0,
+            razmer_mm: 635.0,
+            first_layer: Layer {
+                material: "pet",
+                micron_text: "12",
+                micron: 12,
+            },
+            second_layer: Layer {
+                material: "oppm/pe pr",
+                micron_text: "20/30",
+                micron: 30,
+            },
+            waste_percent: 5.0,
+            round_to: 500.0,
+        };
+
+        let result = calculate(&calculation).unwrap();
+
+        assert_eq!(result.first_coeff, 1.0);
+        assert_eq!(result.second_coeff, 3.0700000000000003);
+        assert_eq!(result.rounded_length, 73500.0);
     }
 }

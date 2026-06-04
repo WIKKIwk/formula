@@ -86,12 +86,26 @@ oppm 20 => MCP/CPP 20 => 1.07
 
 ### Slash bilan yozilgan mikronlar
 
-Mikron `18/20` yoki `25/30` shaklida yozilsa, kattasi olinadi:
+Agar material bitta bo'lib, mikron `18/20` yoki `25/30` shaklida yozilsa, kattasi olinadi:
 
 ```text
 18/20 => 20
 25/30 => 30
 ```
+
+Agar material ham slash bilan yozilsa, u alohida qatlamlarga ajratiladi. Masalan `1207` qator:
+
+```text
+1 QAVAT = pet, 1 MIKRON = 12       => 1
+2 QAVAT = oppm/pe pr, 2 MIKRON = 20/30
+
+oppm 20  => MCP/CPP 20 => 1.07
+pe pr 30 => PE 30      => 2
+
+umumiy koeffitsient = 1 + 1.07 + 2 = 4.07
+```
+
+Bu holat aslida 3 qavat deb hisoblanadi.
 
 ### Twist / Tuisim
 
@@ -179,6 +193,7 @@ Misol natijalar:
 1183    63500
 1185    199000
 1186    69000
+1207    73500
 ```
 
 `1185` twist/tuisim qatori 5% atxod bilan `199000` chiqadi. Agar amaldagi Excelda `195000` bo'lsa, twist uchun atxod/yaxlitlash qoidasi alohida aniqlanishi kerak.
@@ -195,6 +210,7 @@ Testlar quyidagilarni tekshiradi:
 - `pe pr` PE oilasi sifatida olinishi
 - `pet` 20 dan katta bo'lsa `MCP/CPP` jadvaliga tushishi
 - `tuisim` 2-qavatsiz hisoblanishi
+- `oppm/pe pr` kabi 3-qavat yozuvlari alohida qatlamlarga ajratilishi
 
 ## Hozircha Aniqlashtirilishi Kerak Bo'lgan Joylar
 
