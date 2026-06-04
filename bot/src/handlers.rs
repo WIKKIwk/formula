@@ -76,7 +76,7 @@ impl BotApp {
 
         if !self.registry.value().is_ready() {
             self.telegram
-                .send_message(chat_id, &setup_message(chat_id))
+                .send_message(chat_id, &setup_message(chat_id, self.registry.value()))
                 .await?;
             return Ok(());
         }
@@ -239,9 +239,25 @@ impl BotApp {
     }
 }
 
-fn setup_message(chat_id: i64) -> String {
+fn setup_message(chat_id: i64, registry: &crate::registry::BotRegistry) -> String {
+    let mut missing = Vec::new();
+    if registry.order_chat_id.is_none() {
+        missing.push("ma'lumot guruhi");
+    }
+    if registry.calc_chat_id.is_none() {
+        missing.push("hisob-kitob guruhi");
+    }
+    if registry.admin_chat_id.is_none() {
+        missing.push("admin chat");
+    }
+    let missing = if missing.is_empty() {
+        "hammasi ulangan".to_string()
+    } else {
+        missing.join(", ")
+    };
+
     format!(
-        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\nMa'lumot guruhi, hisob guruhi va admin chatni /login orqali ulang."
+        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\nYetishmayapti: <b>{missing}</b>\n\nMa'lumot guruhi, hisob guruhi va admin chatni /login orqali ulang."
     )
 }
 
