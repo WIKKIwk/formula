@@ -208,11 +208,31 @@ Output nomini o'zingiz berishingiz ham mumkin:
 cargo run -- --file ish.xlsx --out natija.csv
 ```
 
+Excel faylning o'zini formatini saqlagan holda yangi `.xlsx` qilib chiqarish:
+
+```bash
+cargo run -- --file ish.xlsx --write-xlsx
+```
+
+Yoki output nomi bilan:
+
+```bash
+cargo run -- --file ish.xlsx --out natija.xlsx
+```
+
 Agar `--out` berilmasa, dastur fayl yoniga shunday output chiqaradi:
 
 ```text
 ish_hisoblangan.csv
 ```
+
+`--write-xlsx` ishlatilsa:
+
+```text
+ish_hisoblangan.xlsx
+```
+
+Excel outputda dastur mavjud ustunlarga tegmaydi. Sheetdagi eng oxirgi ishlatilgan ustundan keyin `HISOBLANGAN_UZUNLIK` ustunini qo'shib, natijalarni o'sha yerga yozadi. Xato qatorga `XATO: ...` deb yoziladi.
 
 Outputga 3 ta ustun qo'shiladi:
 

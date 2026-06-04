@@ -3,6 +3,7 @@ use std::env;
 use std::error::Error;
 use std::path::Path;
 use std::process;
+use umya_spreadsheet::{reader, writer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MaterialFamily {
@@ -351,7 +352,8 @@ fn levenshtein(left: &str, right: &str) -> usize {
 }
 
 fn should_process_file(args: &[String]) -> bool {
-    args.iter().any(|arg| arg == "--file")
+    args.iter()
+        .any(|arg| matches!(arg.as_str(), "--file" | "--write-xlsx"))
         || args
             .first()
             .is_some_and(|arg| !arg.starts_with("--") && looks_like_table_file(arg))
@@ -372,7 +374,24 @@ fn process_file_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let input = read_optional_text(args, "--file")
         .or_else(|| args.first().filter(|arg| !arg.starts_with("--")).cloned())
         .ok_or("fayl yo'li berilmagan")?;
-    let output = read_optional_text(args, "--out").unwrap_or_else(|| default_output_path(&input));
+    let output = read_optional_text(args, "--out").unwrap_or_else(|| {
+        if wants_xlsx_output(args, None) {
+            default_xlsx_output_path(&input)
+        } else {
+            default_csv_output_path(&input)
+        }
+    });
+
+    if wants_xlsx_output(args, Some(&output)) {
+        let report = write_results_to_xlsx(Path::new(&input), Path::new(&output))?;
+
+        println!("Hisoblandi: {}", report.processed_count);
+        println!("OK: {}", report.ok_count);
+        println!("Xato: {}", report.error_count);
+        println!("Output: {output}");
+
+        return Ok(());
+    }
 
     let rows = read_table(Path::new(&input))?;
     let report = calculate_table(&rows)?;
@@ -386,7 +405,17 @@ fn process_file_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn default_output_path(input: &str) -> String {
+fn wants_xlsx_output(args: &[String], output: Option<&str>) -> bool {
+    args.iter().any(|arg| arg == "--write-xlsx")
+        || output.is_some_and(|path| {
+            Path::new(path)
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
+        })
+}
+
+fn default_csv_output_path(input: &str) -> String {
     let path = Path::new(input);
     let stem = path
         .file_stem()
@@ -400,6 +429,20 @@ fn default_output_path(input: &str) -> String {
         .to_string()
 }
 
+fn default_xlsx_output_path(input: &str) -> String {
+    let path = Path::new(input);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("output");
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+
+    parent
+        .join(format!("{stem}_hisoblangan.xlsx"))
+        .to_string_lossy()
+        .to_string()
+}
+
 #[derive(Debug)]
 struct TableReport {
     headers: Vec<String>,
@@ -407,6 +450,21 @@ struct TableReport {
     processed_count: usize,
     ok_count: usize,
     error_count: usize,
+}
+
+#[derive(Debug)]
+struct SheetReport {
+    header_index: usize,
+    results: Vec<RowResult>,
+    processed_count: usize,
+    ok_count: usize,
+    error_count: usize,
+}
+
+#[derive(Debug)]
+struct RowResult {
+    row_index: usize,
+    value: Result<f64, String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -480,8 +538,8 @@ fn trim_float(value: f64) -> String {
 }
 
 fn calculate_table(rows: &[Vec<String>]) -> Result<TableReport, Box<dyn Error>> {
-    let (header_index, indexes) = find_header_row(rows)
-        .ok_or("kerakli ustunlar topilmadi: KG, RAZMER, 1 QAVAT, 1 MIKRON, 2 QAVAT, 2 MIKRON")?;
+    let sheet_report = calculate_sheet(rows)?;
+    let header_index = sheet_report.header_index;
     let mut headers = rows[header_index].clone();
     headers.extend([
         "HISOBLANGAN_UZUNLIK".to_string(),
@@ -490,31 +548,22 @@ fn calculate_table(rows: &[Vec<String>]) -> Result<TableReport, Box<dyn Error>> 
     ]);
 
     let mut output_rows = Vec::new();
-    let mut processed_count = 0;
-    let mut ok_count = 0;
-    let mut error_count = 0;
 
-    for row in rows.iter().skip(header_index + 1) {
-        if row.iter().all(|cell| cell.trim().is_empty()) {
-            continue;
-        }
-
-        processed_count += 1;
+    for row_result in &sheet_report.results {
+        let row = &rows[row_result.row_index];
         let mut output_row = row.clone();
         output_row.resize(headers.len() - 3, String::new());
 
-        match calculate_row(row, indexes) {
-            Ok(result) => {
-                ok_count += 1;
-                output_row.push(format!("{:.0}", result.rounded_length));
+        match &row_result.value {
+            Ok(length) => {
+                output_row.push(format!("{length:.0}"));
                 output_row.push("OK".to_string());
                 output_row.push(String::new());
             }
             Err(message) => {
-                error_count += 1;
                 output_row.push(String::new());
                 output_row.push("XATO".to_string());
-                output_row.push(message);
+                output_row.push(message.clone());
             }
         }
 
@@ -524,10 +573,91 @@ fn calculate_table(rows: &[Vec<String>]) -> Result<TableReport, Box<dyn Error>> 
     Ok(TableReport {
         headers,
         rows: output_rows,
-        processed_count,
+        processed_count: sheet_report.processed_count,
+        ok_count: sheet_report.ok_count,
+        error_count: sheet_report.error_count,
+    })
+}
+
+fn calculate_sheet(rows: &[Vec<String>]) -> Result<SheetReport, Box<dyn Error>> {
+    let (header_index, indexes) = find_header_row(rows)
+        .ok_or("kerakli ustunlar topilmadi: KG, RAZMER, 1 QAVAT, 1 MIKRON, 2 QAVAT, 2 MIKRON")?;
+    let mut results = Vec::new();
+    let mut ok_count = 0;
+    let mut error_count = 0;
+
+    for (row_index, row) in rows.iter().enumerate().skip(header_index + 1) {
+        if row.iter().all(|cell| cell.trim().is_empty()) {
+            continue;
+        }
+
+        let value = match calculate_row(row, indexes) {
+            Ok(result) => {
+                ok_count += 1;
+                Ok(result.rounded_length)
+            }
+            Err(message) => {
+                error_count += 1;
+                Err(message)
+            }
+        };
+
+        results.push(RowResult { row_index, value });
+    }
+
+    Ok(SheetReport {
+        header_index,
+        processed_count: results.len(),
+        results,
         ok_count,
         error_count,
     })
+}
+
+fn write_results_to_xlsx(input: &Path, output: &Path) -> Result<SheetReport, Box<dyn Error>> {
+    if !input
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
+    {
+        return Err("--write-xlsx hozircha faqat .xlsx fayl uchun ishlaydi".into());
+    }
+
+    let rows = read_table(input)?;
+    let sheet_report = calculate_sheet(&rows)?;
+    let mut book = reader::xlsx::read(input)?;
+    let worksheet = book.sheet_mut(0)?;
+
+    let write_column = worksheet.highest_column() + 1;
+    let header_row = sheet_report.header_index as u32 + 1;
+    worksheet
+        .cell_mut((write_column, header_row))
+        .set_value("HISOBLANGAN_UZUNLIK");
+
+    for row_result in &sheet_report.results {
+        let excel_row = row_result.row_index as u32 + 1;
+        match &row_result.value {
+            Ok(length) => {
+                worksheet
+                    .cell_mut((write_column, excel_row))
+                    .set_value(format!("{length:.0}"));
+            }
+            Err(message) => {
+                worksheet
+                    .cell_mut((write_column, excel_row))
+                    .set_value(format!("XATO: {message}"));
+            }
+        }
+    }
+
+    if let Some(parent) = output.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+    writer::xlsx::write(&book, output)?;
+
+    Ok(sheet_report)
 }
 
 fn calculate_row(row: &[String], indexes: ColumnIndexes) -> Result<ResultBreakdown, String> {
@@ -907,6 +1037,8 @@ fn print_usage() {
     eprintln!("  cargo run -- --demo");
     eprintln!("  cargo run -- --file ish.xlsx");
     eprintln!("  cargo run -- --file ish.xlsx --out natija.csv");
+    eprintln!("  cargo run -- --file ish.xlsx --write-xlsx");
+    eprintln!("  cargo run -- --file ish.xlsx --out natija.xlsx");
     eprintln!("  cargo run -- examples/sample.csv");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30 --waste 5 --round 500");
