@@ -54,12 +54,12 @@ impl TelegramClient {
         if let Some(offset) = offset {
             request = request.query(&[("offset", offset.to_string())]);
         }
-        let response = request
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<ApiResponse<Vec<Update>>>()
-            .await?;
+        let http_response = request.send().await?;
+        let status = http_response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram getUpdates HTTP status: {status}").into());
+        }
+        let response = http_response.json::<ApiResponse<Vec<Update>>>().await?;
         if !response.ok {
             return Err("Telegram getUpdates ok=false".into());
         }
@@ -81,10 +81,12 @@ impl TelegramClient {
             .post(self.url("sendMessage"))
             .json(&payload)
             .send()
-            .await?
-            .error_for_status()?
-            .json::<serde_json::Value>()
             .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram sendMessage HTTP status: {status}").into());
+        }
+        let response = response.json::<serde_json::Value>().await?;
         if response.get("ok").and_then(|value| value.as_bool()) != Some(true) {
             return Err(format!("Telegram sendMessage xato: {response}").into());
         }
