@@ -153,13 +153,19 @@ fn calculate(calculation: &Calculation<'_>) -> Result<ResultBreakdown, String> {
 
     let first_family = material_family(calculation.first_layer.material)?;
     let second_family = material_family(calculation.second_layer.material)?;
-    let first_coeff = coefficient_cell(&calculation.first_layer, true)?;
-    let second_coeff =
-        if first_family == MaterialFamily::Twist && second_family == MaterialFamily::Empty {
-            0.0
-        } else {
-            coefficient_cell(&calculation.second_layer, false)?
-        };
+    let first_coeff = if first_family == MaterialFamily::Empty {
+        0.0
+    } else {
+        coefficient_cell(&calculation.first_layer, true)?
+    };
+    let second_coeff = if second_family == MaterialFamily::Empty {
+        0.0
+    } else {
+        coefficient_cell(&calculation.second_layer, false)?
+    };
+    if first_coeff + second_coeff <= 0.0 {
+        return Err("kamida bitta qavat materiali bo'lishi kerak".to_string());
+    }
     let coeff_sum = first_coeff + second_coeff;
     let razmer_sm = calculation.razmer_mm / 10.0;
     let density_part = coeff_sum * razmer_sm;
@@ -205,9 +211,16 @@ fn coefficient_cell(layer: &Layer<'_>, is_first_layer: bool) -> Result<f64, Stri
 
 fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Result<f64, String> {
     let family = material_family(material)?;
+    let normalized = normalize_token(material);
 
     if is_first_layer
         && !matches!(family, MaterialFamily::Empty | MaterialFamily::Twist)
+        && micron <= 20
+    {
+        return Ok(1.0);
+    }
+    if family == MaterialFamily::FirstLayer
+        && (normalized.starts_with("pet") || normalized.starts_with("mpet"))
         && micron <= 20
     {
         return Ok(1.0);
@@ -239,12 +252,16 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
     }
     if normalized.starts_with("twist")
         || normalized.starts_with("tuisim")
+        || normalized.starts_with("twism")
         || normalized.starts_with("tuism")
         || normalized.starts_with("tvis")
     {
         return Ok(MaterialFamily::Twist);
     }
-    if normalized.starts_with("pet") || is_close_material(&normalized, "pet") {
+    if normalized.starts_with("pet")
+        || normalized.starts_with("mpet")
+        || is_close_material(&normalized, "pet")
+    {
         return Ok(MaterialFamily::FirstLayer);
     }
     if normalized.starts_with("opp")
@@ -257,7 +274,10 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
     if matches!(normalized.as_str(), "map" | "mcpp" | "msr" | "msp") {
         return Ok(MaterialFamily::McpCpp);
     }
-    if normalized.starts_with("mat") || is_close_material(&normalized, "mat") {
+    if normalized.starts_with("mat")
+        || normalized.starts_with("pff")
+        || is_close_material(&normalized, "mat")
+    {
         return Ok(MaterialFamily::FirstLayer);
     }
     if normalized.starts_with("pe") || is_close_material(&normalized, "pe") {
@@ -518,7 +538,11 @@ fn calculate_row(row: &[String], indexes: ColumnIndexes) -> Result<ResultBreakdo
     let q2 = get_cell(row, indexes.second_material);
     let m2 = get_cell(row, indexes.second_micron);
 
-    let first_micron = parse_micron(m1)?;
+    let first_micron = if is_empty_material(q1) {
+        0
+    } else {
+        parse_micron(m1)?
+    };
     let second_micron = if is_empty_material(q2) {
         0
     } else {
@@ -982,11 +1006,46 @@ mod tests {
     fn tolerates_simple_material_typos() {
         assert_eq!(material_family("pett").unwrap(), MaterialFamily::FirstLayer);
         assert_eq!(material_family("map").unwrap(), MaterialFamily::McpCpp);
+        assert_eq!(material_family("twism").unwrap(), MaterialFamily::Twist);
+        assert_eq!(material_family("pff").unwrap(), MaterialFamily::FirstLayer);
+        assert_eq!(material_family("mpet").unwrap(), MaterialFamily::FirstLayer);
         assert_eq!(material_family("PE PR").unwrap(), MaterialFamily::Pe);
     }
 
     #[test]
     fn does_not_confuse_pe_with_pet() {
         assert_eq!(material_family("pe").unwrap(), MaterialFamily::Pe);
+    }
+
+    #[test]
+    fn calculates_with_empty_first_layer() {
+        let calculation = Calculation {
+            kg: 150.0,
+            razmer_mm: 850.0,
+            first_layer: Layer {
+                material: "--",
+                micron_text: "--",
+                micron: 0,
+            },
+            second_layer: Layer {
+                material: "pe pr",
+                micron_text: "60",
+                micron: 60,
+            },
+            waste_percent: 5.0,
+            round_to: 500.0,
+        };
+
+        let result = calculate(&calculation).unwrap();
+
+        assert_eq!(result.first_coeff, 0.0);
+        assert_eq!(result.second_coeff, 4.0);
+        assert_eq!(result.rounded_length, 3000.0);
+    }
+
+    #[test]
+    fn maps_petm_and_mpet_12_to_one() {
+        assert_eq!(coefficient_single("petm", 12, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("mpet", 12, false).unwrap(), 1.0);
     }
 }

@@ -235,8 +235,13 @@ Material nomlarida ham oddiy imlo xatolarga chidamli:
 ```text
 pett => pet
 map  => mcp
+twism => twist
+pff => mat oilasi
+petm/mpet => pet oilasi
 pe pr, pe-pr, PE PR => pe pr
 ```
+
+Bitta qavat bo'sh bo'lsa `--`, u 0 deb olinadi. Masalan 1-qavat bo'sh, 2-qavat `pe pr 60` bo'lsa faqat `PE 60` hisoblanadi.
 
 ## Demo Qatorlar
 
