@@ -1,4 +1,7 @@
+use calamine::{open_workbook_auto, Data, Reader};
 use std::env;
+use std::error::Error;
+use std::path::Path;
 use std::process;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +46,14 @@ struct ResultBreakdown {
 
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
+
+    if should_process_file(&args) {
+        if let Err(error) = process_file_command(&args) {
+            eprintln!("Xato: {error}");
+            process::exit(1);
+        }
+        return;
+    }
 
     if args.first().is_some_and(|arg| arg == "--demo") {
         run_demo_rows();
@@ -195,7 +206,10 @@ fn coefficient_cell(layer: &Layer<'_>, is_first_layer: bool) -> Result<f64, Stri
 fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Result<f64, String> {
     let family = material_family(material)?;
 
-    if is_first_layer && family == MaterialFamily::FirstLayer && micron <= 20 {
+    if is_first_layer
+        && !matches!(family, MaterialFamily::Empty | MaterialFamily::Twist)
+        && micron <= 20
+    {
         return Ok(1.0);
     }
 
@@ -215,28 +229,48 @@ fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Resu
 }
 
 fn material_family(material: &str) -> Result<MaterialFamily, String> {
-    let normalized = material.trim().to_lowercase();
+    let normalized = normalize_token(material);
 
     if normalized == "--" || normalized.is_empty() {
         return Ok(MaterialFamily::Empty);
     }
-    if normalized.starts_with("twist") || normalized.starts_with("tuisim") {
+    if matches!(normalized.as_str(), "-" | "yoq" | "yuq" | "none" | "null") {
+        return Ok(MaterialFamily::Empty);
+    }
+    if normalized.starts_with("twist")
+        || normalized.starts_with("tuisim")
+        || normalized.starts_with("tuism")
+        || normalized.starts_with("tvis")
+    {
         return Ok(MaterialFamily::Twist);
     }
-    if normalized.starts_with("pet")
-        || normalized.starts_with("opp")
+    if normalized.starts_with("pet") || is_close_material(&normalized, "pet") {
+        return Ok(MaterialFamily::FirstLayer);
+    }
+    if normalized.starts_with("opp")
         || normalized.starts_with("popp")
-        || normalized.starts_with("mat")
+        || is_close_material(&normalized, "opp")
+        || is_close_material(&normalized, "popp")
     {
         return Ok(MaterialFamily::FirstLayer);
     }
-    if normalized.starts_with("pe") {
-        return Ok(MaterialFamily::Pe);
-    }
-    if normalized.starts_with("cpp") || normalized.starts_with("mcp") {
+    if matches!(normalized.as_str(), "map" | "mcpp" | "msr" | "msp") {
         return Ok(MaterialFamily::McpCpp);
     }
-    if normalized.starts_with("jem") {
+    if normalized.starts_with("mat") || is_close_material(&normalized, "mat") {
+        return Ok(MaterialFamily::FirstLayer);
+    }
+    if normalized.starts_with("pe") || is_close_material(&normalized, "pe") {
+        return Ok(MaterialFamily::Pe);
+    }
+    if normalized.starts_with("cpp")
+        || normalized.starts_with("mcp")
+        || is_close_material(&normalized, "cpp")
+        || is_close_material(&normalized, "mcp")
+    {
+        return Ok(MaterialFamily::McpCpp);
+    }
+    if normalized.starts_with("jem") || is_close_material(&normalized, "jem") {
         return Ok(MaterialFamily::Jem);
     }
 
@@ -244,8 +278,8 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
 }
 
 fn is_empty_material(material: &str) -> bool {
-    let normalized = material.trim();
-    normalized.is_empty() || normalized == "--"
+    let normalized = normalize_token(material);
+    normalized.is_empty() || matches!(normalized.as_str(), "--" | "-" | "yoq" | "yuq")
 }
 
 fn split_materials(material: &str) -> Vec<&str> {
@@ -254,6 +288,368 @@ fn split_materials(material: &str) -> Vec<&str> {
         .map(str::trim)
         .filter(|part| !part.is_empty())
         .collect()
+}
+
+fn normalize_token(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '-')
+        .collect()
+}
+
+fn is_close_material(value: &str, expected: &str) -> bool {
+    if value == expected {
+        return true;
+    }
+    if value.len() != expected.len() {
+        return false;
+    }
+    levenshtein(value, expected) <= 1
+}
+
+fn levenshtein(left: &str, right: &str) -> usize {
+    let mut costs: Vec<usize> = (0..=right.len()).collect();
+
+    for (i, left_char) in left.chars().enumerate() {
+        let mut previous = i;
+        costs[0] = i + 1;
+
+        for (j, right_char) in right.chars().enumerate() {
+            let current = costs[j + 1];
+            costs[j + 1] = if left_char == right_char {
+                previous
+            } else {
+                1 + previous.min(current).min(costs[j])
+            };
+            previous = current;
+        }
+    }
+
+    costs[right.len()]
+}
+
+fn should_process_file(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--file")
+        || args
+            .first()
+            .is_some_and(|arg| !arg.starts_with("--") && looks_like_table_file(arg))
+}
+
+fn looks_like_table_file(path: &str) -> bool {
+    matches!(
+        Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_lowercase)
+            .as_deref(),
+        Some("csv" | "xlsx" | "xlsm" | "xls")
+    )
+}
+
+fn process_file_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    let input = read_optional_text(args, "--file")
+        .or_else(|| args.first().filter(|arg| !arg.starts_with("--")).cloned())
+        .ok_or("fayl yo'li berilmagan")?;
+    let output = read_optional_text(args, "--out").unwrap_or_else(|| default_output_path(&input));
+
+    let rows = read_table(Path::new(&input))?;
+    let report = calculate_table(&rows)?;
+    write_report_csv(Path::new(&output), &report)?;
+
+    println!("Hisoblandi: {}", report.processed_count);
+    println!("OK: {}", report.ok_count);
+    println!("Xato: {}", report.error_count);
+    println!("Output: {output}");
+
+    Ok(())
+}
+
+fn default_output_path(input: &str) -> String {
+    let path = Path::new(input);
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("output");
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+
+    parent
+        .join(format!("{stem}_hisoblangan.csv"))
+        .to_string_lossy()
+        .to_string()
+}
+
+#[derive(Debug)]
+struct TableReport {
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    processed_count: usize,
+    ok_count: usize,
+    error_count: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ColumnIndexes {
+    kg: usize,
+    razmer: usize,
+    first_material: usize,
+    first_micron: usize,
+    second_material: usize,
+    second_micron: usize,
+}
+
+fn read_table(path: &Path) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
+        Some("csv") => read_csv(path),
+        Some("xlsx" | "xlsm" | "xls") => read_excel(path),
+        _ => Err(format!("qo'llab-quvvatlanmaydigan fayl: {}", path.display()).into()),
+    }
+}
+
+fn read_csv(path: &Path) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_path(path)?;
+    let mut rows = Vec::new();
+
+    for record in reader.records() {
+        rows.push(record?.iter().map(ToOwned::to_owned).collect());
+    }
+
+    Ok(rows)
+}
+
+fn read_excel(path: &Path) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
+    let mut workbook = open_workbook_auto(path)?;
+    let range = workbook
+        .worksheet_range_at(0)
+        .ok_or("Excel ichida sheet topilmadi")??;
+
+    Ok(range
+        .rows()
+        .map(|row| row.iter().map(cell_to_string).collect())
+        .collect())
+}
+
+fn cell_to_string(cell: &Data) -> String {
+    match cell {
+        Data::Empty => String::new(),
+        Data::String(value) => value.trim().to_string(),
+        Data::Int(value) => value.to_string(),
+        Data::Float(value) => trim_float(*value),
+        Data::Bool(value) => value.to_string(),
+        Data::DateTime(value) => value.to_string(),
+        Data::DateTimeIso(value) | Data::DurationIso(value) => value.clone(),
+        Data::Error(value) => format!("{value:?}"),
+    }
+}
+
+fn trim_float(value: f64) -> String {
+    if value.fract().abs() < f64::EPSILON {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
+}
+
+fn calculate_table(rows: &[Vec<String>]) -> Result<TableReport, Box<dyn Error>> {
+    let (header_index, indexes) = find_header_row(rows)
+        .ok_or("kerakli ustunlar topilmadi: KG, RAZMER, 1 QAVAT, 1 MIKRON, 2 QAVAT, 2 MIKRON")?;
+    let mut headers = rows[header_index].clone();
+    headers.extend([
+        "HISOBLANGAN_UZUNLIK".to_string(),
+        "STATUS".to_string(),
+        "XATO".to_string(),
+    ]);
+
+    let mut output_rows = Vec::new();
+    let mut processed_count = 0;
+    let mut ok_count = 0;
+    let mut error_count = 0;
+
+    for row in rows.iter().skip(header_index + 1) {
+        if row.iter().all(|cell| cell.trim().is_empty()) {
+            continue;
+        }
+
+        processed_count += 1;
+        let mut output_row = row.clone();
+        output_row.resize(headers.len() - 3, String::new());
+
+        match calculate_row(row, indexes) {
+            Ok(result) => {
+                ok_count += 1;
+                output_row.push(format!("{:.0}", result.rounded_length));
+                output_row.push("OK".to_string());
+                output_row.push(String::new());
+            }
+            Err(message) => {
+                error_count += 1;
+                output_row.push(String::new());
+                output_row.push("XATO".to_string());
+                output_row.push(message);
+            }
+        }
+
+        output_rows.push(output_row);
+    }
+
+    Ok(TableReport {
+        headers,
+        rows: output_rows,
+        processed_count,
+        ok_count,
+        error_count,
+    })
+}
+
+fn calculate_row(row: &[String], indexes: ColumnIndexes) -> Result<ResultBreakdown, String> {
+    let kg_text = get_cell(row, indexes.kg);
+    let razmer_text = get_cell(row, indexes.razmer);
+    let q1 = get_cell(row, indexes.first_material);
+    let m1 = get_cell(row, indexes.first_micron);
+    let q2 = get_cell(row, indexes.second_material);
+    let m2 = get_cell(row, indexes.second_micron);
+
+    let first_micron = parse_micron(m1)?;
+    let second_micron = if is_empty_material(q2) {
+        0
+    } else {
+        parse_micron(m2)?
+    };
+
+    let calculation = Calculation {
+        kg: parse_decimal(kg_text).map_err(|message| format!("KG: {message}"))?,
+        razmer_mm: parse_decimal(razmer_text).map_err(|message| format!("RAZMER: {message}"))?,
+        first_layer: Layer {
+            material: q1,
+            micron_text: m1,
+            micron: first_micron,
+        },
+        second_layer: Layer {
+            material: q2,
+            micron_text: m2,
+            micron: second_micron,
+        },
+        waste_percent: 5.0,
+        round_to: 500.0,
+    };
+
+    calculate(&calculation)
+}
+
+fn get_cell(row: &[String], index: usize) -> &str {
+    row.get(index).map(String::as_str).unwrap_or("")
+}
+
+fn find_header_row(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)> {
+    rows.iter()
+        .take(30)
+        .enumerate()
+        .find_map(|(index, row)| find_columns(row).map(|columns| (index, columns)))
+}
+
+fn find_columns(row: &[String]) -> Option<ColumnIndexes> {
+    Some(ColumnIndexes {
+        kg: find_column(row, HeaderKind::Kg)?,
+        razmer: find_column(row, HeaderKind::Razmer)?,
+        first_material: find_column(row, HeaderKind::FirstMaterial)?,
+        first_micron: find_column(row, HeaderKind::FirstMicron)?,
+        second_material: find_column(row, HeaderKind::SecondMaterial)?,
+        second_micron: find_column(row, HeaderKind::SecondMicron)?,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum HeaderKind {
+    Kg,
+    Razmer,
+    FirstMaterial,
+    FirstMicron,
+    SecondMaterial,
+    SecondMicron,
+}
+
+fn find_column(row: &[String], kind: HeaderKind) -> Option<usize> {
+    row.iter()
+        .position(|cell| header_matches(&normalize_header(cell), kind))
+}
+
+fn normalize_header(value: &str) -> String {
+    value
+        .trim()
+        .to_lowercase()
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn header_matches(header: &str, kind: HeaderKind) -> bool {
+    match kind {
+        HeaderKind::Kg => matches!(header, "kg" | "kilo" | "ogirlik" | "weight"),
+        HeaderKind::Razmer => matches!(header, "razmer" | "razmr" | "olcham" | "size"),
+        HeaderKind::FirstMaterial => {
+            matches!(
+                header,
+                "1qavat" | "1qatlam" | "qavat1" | "qatlam1" | "1layer"
+            )
+        }
+        HeaderKind::FirstMicron => {
+            matches!(
+                header,
+                "1mikron" | "1micron" | "1mkrn" | "mikron1" | "micron1"
+            )
+        }
+        HeaderKind::SecondMaterial => {
+            matches!(
+                header,
+                "2qavat" | "2qatlam" | "qavat2" | "qatlam2" | "2layer"
+            )
+        }
+        HeaderKind::SecondMicron => {
+            matches!(
+                header,
+                "2mikron" | "2micron" | "2mkrn" | "mikron2" | "micron2"
+            )
+        }
+    }
+}
+
+fn parse_decimal(value: &str) -> Result<f64, String> {
+    let mut normalized = value.trim().replace(' ', "");
+    if normalized.contains(',') && !normalized.contains('.') {
+        normalized = normalized.replace(',', ".");
+    } else {
+        normalized = normalized.replace(',', "");
+    }
+
+    normalized
+        .parse::<f64>()
+        .map_err(|_| format!("raqam noto'g'ri: '{value}'"))
+}
+
+fn write_report_csv(path: &Path, report: &TableReport) -> Result<(), Box<dyn Error>> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    let mut writer = csv::Writer::from_path(path)?;
+    writer.write_record(&report.headers)?;
+    for row in &report.rows {
+        writer.write_record(row)?;
+    }
+    writer.flush()?;
+
+    Ok(())
 }
 
 fn mcp_cpp_coefficient(micron: u32) -> Option<f64> {
@@ -397,6 +793,11 @@ fn read_optional_number(args: &[String], name: &str) -> Result<Option<f64>, Stri
     }
 }
 
+fn read_optional_text(args: &[String], name: &str) -> Option<String> {
+    let index = args.iter().position(|arg| arg == name)?;
+    args.get(index + 1).cloned()
+}
+
 fn read_micron(args: &[String], name: &str) -> Result<u32, String> {
     let value = read_text(args, name)?;
     parse_micron(&value)
@@ -480,6 +881,9 @@ fn print_usage() {
     eprintln!("Ishlatish:");
     eprintln!("  cargo run");
     eprintln!("  cargo run -- --demo");
+    eprintln!("  cargo run -- --file ish.xlsx");
+    eprintln!("  cargo run -- --file ish.xlsx --out natija.csv");
+    eprintln!("  cargo run -- examples/sample.csv");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30 --waste 5 --round 500");
 }
@@ -572,5 +976,17 @@ mod tests {
         assert_eq!(result.first_coeff, 1.0);
         assert_eq!(result.second_coeff, 3.0700000000000003);
         assert_eq!(result.rounded_length, 73500.0);
+    }
+
+    #[test]
+    fn tolerates_simple_material_typos() {
+        assert_eq!(material_family("pett").unwrap(), MaterialFamily::FirstLayer);
+        assert_eq!(material_family("map").unwrap(), MaterialFamily::McpCpp);
+        assert_eq!(material_family("PE PR").unwrap(), MaterialFamily::Pe);
+    }
+
+    #[test]
+    fn does_not_confuse_pe_with_pet() {
+        assert_eq!(material_family("pe").unwrap(), MaterialFamily::Pe);
     }
 }

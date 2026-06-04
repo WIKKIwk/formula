@@ -177,6 +177,67 @@ Natija:
 yakuniy uzunlik: 12000
 ```
 
+## Excel yoki CSV Faylni Hisoblash
+
+CSV yoki Excel fayl berilganda dastur ustunlarni o'zi topadi va yangi CSV fayl chiqaradi.
+
+Kerakli ustunlar:
+
+- `KG`
+- `RAZMER`
+- `1 QAVAT`
+- `1 MIKRON`
+- `2 QAVAT`
+- `2 MIKRON`
+
+CSV fayl:
+
+```bash
+cargo run -- --file examples/sample.csv
+```
+
+Excel fayl:
+
+```bash
+cargo run -- --file ish.xlsx
+```
+
+Output nomini o'zingiz berishingiz ham mumkin:
+
+```bash
+cargo run -- --file ish.xlsx --out natija.csv
+```
+
+Agar `--out` berilmasa, dastur fayl yoniga shunday output chiqaradi:
+
+```text
+ish_hisoblangan.csv
+```
+
+Outputga 3 ta ustun qo'shiladi:
+
+- `HISOBLANGAN_UZUNLIK`
+- `STATUS`
+- `XATO`
+
+Masalan:
+
+```text
+KOD,KG,RAZMER,1 QAVAT,1 MIKRON,2 QAVAT,2 MIKRON,HISOBLANGAN_UZUNLIK,STATUS,XATO
+1178,300,530,pet,12,pe pr,30,12000,OK,
+1207,3000,635,pet,12,oppm/pe pr,20/30,73500,OK,
+```
+
+Ustun nomlarida probel yoki tire farq qilmaydi. Masalan `1 QAVAT`, `1-qavat`, `1QAVAT` bir xil deb olinadi.
+
+Material nomlarida ham oddiy imlo xatolarga chidamli:
+
+```text
+pett => pet
+map  => mcp
+pe pr, pe-pr, PE PR => pe pr
+```
+
 ## Demo Qatorlar
 
 Rasmdagi test qatorlarni hisoblatish:
