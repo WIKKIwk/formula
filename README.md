@@ -165,10 +165,58 @@ Rust o'rnatilgan bo'lishi kerak.
 cargo run
 ```
 
+Terminalda savol-javob qilib hisoblash:
+
+```bash
+cargo run -- --interactive
+```
+
+Dastur ketma-ket so'raydi:
+
+- `KG`
+- `RAZMER mm`
+- `1-qavat material`
+- `1-qavat mikron`
+- `2-qavat material`
+- `2-qavat mikron`
+- `3-qavat material`
+- `3-qavat mikron`
+- `Atxod foizi`
+- `Yaxlitlash`
+
+3-qavat kerak bo'lmasa, `3-qavat material` joyini bo'sh qoldirib Enter bosiladi. 2-qavat ham bo'sh qoldirilsa, faqat 1-qavat bilan hisoblaydi.
+
+Misol:
+
+```text
+KG: 3000
+RAZMER mm: 635
+1-qavat material: pet
+1-qavat mikron: 12
+2-qavat material: oppm
+2-qavat mikron: 20
+3-qavat material: pe pr
+3-qavat mikron: 30
+Atxod foizi [5]:
+Yaxlitlash [500]:
+```
+
+Natija:
+
+```text
+yakuniy uzunlik: 73500
+```
+
 Parametr bilan:
 
 ```bash
 cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 "pe pr" --m2 30
+```
+
+3-qavat parametr bilan:
+
+```bash
+cargo run -- --kg 3000 --razmer 635 --q1 pet --m1 12 --q2 oppm --m2 20 --q3 "pe pr" --m3 30
 ```
 
 Natija:

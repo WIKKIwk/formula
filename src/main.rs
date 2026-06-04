@@ -1,6 +1,7 @@
 use calamine::{open_workbook_auto, Data, Reader};
 use std::env;
 use std::error::Error;
+use std::io::{self, Write};
 use std::path::Path;
 use std::process;
 use umya_spreadsheet::{reader, writer};
@@ -48,6 +49,17 @@ struct ResultBreakdown {
 fn main() {
     let args: Vec<String> = env::args().skip(1).collect();
 
+    if args
+        .first()
+        .is_some_and(|arg| matches!(arg.as_str(), "--interactive" | "-i"))
+    {
+        if let Err(error) = run_interactive() {
+            eprintln!("Xato: {error}");
+            process::exit(1);
+        }
+        return;
+    }
+
     if should_process_file(&args) {
         if let Err(error) = process_file_command(&args) {
             eprintln!("Xato: {error}");
@@ -91,15 +103,23 @@ fn calculation_from_args(args: &[String]) -> Result<Calculation<'static>, String
     let first_micron_text = read_text(args, "--m1")?;
     let first_micron = parse_micron(&first_micron_text)?;
     let second_material = read_text(args, "--q2")?;
-    let second_micron = if is_empty_material(&second_material) {
-        0
-    } else {
-        read_micron(args, "--m2")?
-    };
     let second_micron_text = if is_empty_material(&second_material) {
         "--".to_string()
     } else {
         read_text(args, "--m2")?
+    };
+    let third_material = read_optional_text(args, "--q3").unwrap_or_default();
+    let third_micron_text = read_optional_text(args, "--m3").unwrap_or_default();
+    let (second_material, second_micron_text) = merge_optional_third_layer(
+        second_material,
+        second_micron_text,
+        third_material,
+        third_micron_text,
+    )?;
+    let second_micron = if is_empty_material(&second_material) {
+        0
+    } else {
+        parse_micron(&second_micron_text)?
     };
     let waste_percent = read_optional_number(args, "--waste")?.unwrap_or(5.0);
     let round_to = read_optional_number(args, "--round")?.unwrap_or(500.0);
@@ -138,6 +158,145 @@ fn example_1178() -> Calculation<'static> {
         },
         waste_percent: 5.0,
         round_to: 500.0,
+    }
+}
+
+fn run_interactive() -> Result<(), String> {
+    println!("Terminal hisoblash rejimi");
+    println!("3-qavatni skip qilish uchun material joyini bo'sh qoldiring.");
+    println!();
+
+    let kg = prompt_decimal("KG")?;
+    let razmer_mm = prompt_decimal("RAZMER mm")?;
+    let first_material = prompt_required("1-qavat material")?;
+    let first_micron_text = prompt_required("1-qavat mikron")?;
+    let first_micron = parse_micron(&first_micron_text)?;
+    let second_material = prompt_optional("2-qavat material (bo'sh bo'lsa skip)")?;
+    let second_micron_text = if second_material.is_empty() {
+        "--".to_string()
+    } else {
+        prompt_required("2-qavat mikron")?
+    };
+    let third_material = prompt_optional("3-qavat material (bo'sh bo'lsa skip)")?;
+    let third_micron_text = if third_material.is_empty() {
+        String::new()
+    } else {
+        prompt_required("3-qavat mikron")?
+    };
+    let waste_percent = prompt_optional_decimal("Atxod foizi", 5.0)?;
+    let round_to = prompt_optional_decimal("Yaxlitlash", 500.0)?;
+    let (second_material, second_micron_text) = merge_optional_third_layer(
+        second_material,
+        second_micron_text,
+        third_material,
+        third_micron_text,
+    )?;
+    let second_micron = if is_empty_material(&second_material) {
+        0
+    } else {
+        parse_micron(&second_micron_text)?
+    };
+
+    let calculation = Calculation {
+        kg,
+        razmer_mm,
+        first_layer: Layer {
+            material: Box::leak(first_material.into_boxed_str()),
+            micron_text: Box::leak(first_micron_text.into_boxed_str()),
+            micron: first_micron,
+        },
+        second_layer: Layer {
+            material: Box::leak(second_material.into_boxed_str()),
+            micron_text: Box::leak(second_micron_text.into_boxed_str()),
+            micron: second_micron,
+        },
+        waste_percent,
+        round_to,
+    };
+
+    let result = calculate(&calculation)?;
+    println!();
+    print_result(&calculation, &result);
+
+    Ok(())
+}
+
+fn merge_optional_third_layer(
+    second_material: String,
+    second_micron_text: String,
+    third_material: String,
+    third_micron_text: String,
+) -> Result<(String, String), String> {
+    let second_empty = is_empty_material(&second_material);
+    let third_empty = is_empty_material(&third_material);
+
+    match (second_empty, third_empty) {
+        (true, true) => Ok(("--".to_string(), "--".to_string())),
+        (true, false) => {
+            if third_micron_text.trim().is_empty() {
+                return Err("3-qavat materiali bor, lekin mikroni berilmagan".to_string());
+            }
+            Ok((third_material, third_micron_text))
+        }
+        (false, true) => Ok((second_material, second_micron_text)),
+        (false, false) => {
+            if third_micron_text.trim().is_empty() {
+                return Err("3-qavat materiali bor, lekin mikroni berilmagan".to_string());
+            }
+            Ok((
+                format!("{second_material}/{third_material}"),
+                format!("{second_micron_text}/{third_micron_text}"),
+            ))
+        }
+    }
+}
+
+fn prompt_required(label: &str) -> Result<String, String> {
+    loop {
+        let value = prompt_optional(label)?;
+        if !value.trim().is_empty() {
+            return Ok(value);
+        }
+        println!("{label} bo'sh bo'lmasligi kerak.");
+    }
+}
+
+fn prompt_optional(label: &str) -> Result<String, String> {
+    print!("{label}: ");
+    io::stdout()
+        .flush()
+        .map_err(|error| format!("stdout flush xatosi: {error}"))?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|error| format!("stdin o'qish xatosi: {error}"))?;
+
+    Ok(input.trim().to_string())
+}
+
+fn prompt_decimal(label: &str) -> Result<f64, String> {
+    loop {
+        let value = prompt_required(label)?;
+        match parse_decimal(&value) {
+            Ok(number) if number > 0.0 => return Ok(number),
+            Ok(_) => println!("{label} 0 dan katta bo'lishi kerak."),
+            Err(message) => println!("{message}"),
+        }
+    }
+}
+
+fn prompt_optional_decimal(label: &str, default: f64) -> Result<f64, String> {
+    loop {
+        let value = prompt_optional(&format!("{label} [{default}]"))?;
+        if value.trim().is_empty() {
+            return Ok(default);
+        }
+        match parse_decimal(&value) {
+            Ok(number) if number > 0.0 => return Ok(number),
+            Ok(_) => println!("{label} 0 dan katta bo'lishi kerak."),
+            Err(message) => println!("{message}"),
+        }
     }
 }
 
@@ -995,11 +1154,6 @@ fn read_optional_text(args: &[String], name: &str) -> Option<String> {
     args.get(index + 1).cloned()
 }
 
-fn read_micron(args: &[String], name: &str) -> Result<u32, String> {
-    let value = read_text(args, name)?;
-    parse_micron(&value)
-}
-
 fn parse_micron(value: &str) -> Result<u32, String> {
     let normalized = value.trim();
     if normalized == "--" || normalized.is_empty() {
@@ -1077,6 +1231,7 @@ fn print_result(calculation: &Calculation<'_>, result: &ResultBreakdown) {
 fn print_usage() {
     eprintln!("Ishlatish:");
     eprintln!("  cargo run");
+    eprintln!("  cargo run -- --interactive");
     eprintln!("  cargo run -- --demo");
     eprintln!("  cargo run -- --file ish.xlsx");
     eprintln!("  cargo run -- --file ish.xlsx --out natija.xlsx");
@@ -1084,6 +1239,7 @@ fn print_usage() {
     eprintln!("  cargo run -- --file ish.tsv");
     eprintln!("  cargo run -- examples/sample.csv");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30");
+    eprintln!("  cargo run -- --kg 3000 --razmer 635 --q1 pet --m1 12 --q2 oppm --m2 20 --q3 \"pe pr\" --m3 30");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30 --waste 5 --round 500");
 }
 
@@ -1222,5 +1378,19 @@ mod tests {
     fn maps_petm_and_mpet_12_to_one() {
         assert_eq!(coefficient_single("petm", 12, false).unwrap(), 1.0);
         assert_eq!(coefficient_single("mpet", 12, false).unwrap(), 1.0);
+    }
+
+    #[test]
+    fn merges_optional_third_layer_for_cli_and_interactive() {
+        let (material, micron) = merge_optional_third_layer(
+            "oppm".to_string(),
+            "20".to_string(),
+            "pe pr".to_string(),
+            "30".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(material, "oppm/pe pr");
+        assert_eq!(micron, "20/30");
     }
 }
