@@ -333,8 +333,6 @@ Kerakli env:
 
 ```bash
 export BOT_TOKEN="telegram_bot_token"
-export ORDER_CHAT_ID="-1001234567890"
-export CALC_CHAT_ID="-1009876543210"
 ```
 
 Ishga tushirish:
@@ -354,7 +352,26 @@ Bot bilan ishlash:
 ```text
 /new     yangi buyurtma boshlaydi
 /cancel  joriy buyurtmani bekor qiladi
+/login   guruh/chat rolini ulaydi
 ```
+
+`/login` setup:
+
+```text
+ma'lumot tashlaydigan guruh:
+login: guruh
+parol: @#12asn
+
+hisob-kitob guruhi:
+login: hisob
+parol: @#12hsb
+
+admin private chat:
+login: chat
+parol: @#12
+```
+
+Bot login va parol xabarlarini o'chiradi. Prompt xabarini `Login yozing` -> `Parol yozing` -> `Qabul qilindi: ...` qilib edit qiladi. Rolelar `bot_state.json`ga saqlanadi.
 
 Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, 1/2/3-qavat material va mikronlari, eslatma. 2 yoki 3-qavat kerak bo'lmasa `-` yoziladi.
 

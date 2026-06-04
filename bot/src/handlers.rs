@@ -2,22 +2,27 @@ use crate::calc::calculate_order;
 use crate::config::Config;
 use crate::formatter::{calc_message, order_message};
 use crate::order::OrderDraft;
-use crate::state::{Sessions, Step};
+use crate::registry::{ChatRole, RegistryStore};
+use crate::state::{LoginSessions, LoginStep, Sessions, Step};
 use crate::telegram::{TelegramClient, Update};
 use tokio::time::{sleep, Duration};
 
 pub struct BotApp {
-    config: Config,
     telegram: TelegramClient,
     sessions: Sessions,
+    logins: LoginSessions,
+    registry: RegistryStore,
 }
 
 impl BotApp {
     pub fn new(config: Config, telegram: TelegramClient) -> Self {
+        let registry = RegistryStore::load(config.state_file.clone())
+            .unwrap_or_else(|error| panic!("registry yuklanmadi: {error}"));
         Self {
-            config,
             telegram,
             sessions: Sessions::default(),
+            logins: LoginSessions::default(),
+            registry,
         }
     }
 
@@ -44,8 +49,22 @@ impl BotApp {
             return Ok(());
         };
         let chat_id = message.chat.id;
+        let message_id = message.message_id;
         let text = message.text.unwrap_or_default();
         let trimmed = text.trim();
+
+        if matches!(trimmed, "/login" | "login") {
+            let _ = self.telegram.delete_message(chat_id, message_id).await;
+            let prompt_message_id = self.telegram.send_message(chat_id, "Login yozing").await?;
+            self.logins.start(chat_id, prompt_message_id);
+            return Ok(());
+        }
+
+        if self.logins.get_mut(chat_id).is_some() {
+            self.handle_login_answer(chat_id, message_id, trimmed)
+                .await?;
+            return Ok(());
+        }
 
         if matches!(trimmed, "/chatid" | "chatid") {
             self.telegram
@@ -54,7 +73,7 @@ impl BotApp {
             return Ok(());
         }
 
-        if !self.config.is_ready() {
+        if !self.registry.value().is_ready() {
             self.telegram
                 .send_message(chat_id, &setup_message(chat_id))
                 .await?;
@@ -86,12 +105,64 @@ impl BotApp {
         };
 
         match outcome {
-            Flow::Ask(prompt) => self.telegram.send_message(chat_id, prompt).await?,
+            Flow::Ask(prompt) => {
+                let _ = self.telegram.send_message(chat_id, prompt).await?;
+            }
             Flow::Done(order) => {
                 self.sessions.remove(chat_id);
                 self.finish_order(chat_id, order).await?;
             }
-            Flow::Error(message) => self.telegram.send_message(chat_id, &message).await?,
+            Flow::Error(message) => {
+                let _ = self.telegram.send_message(chat_id, &message).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn handle_login_answer(
+        &mut self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _ = self.telegram.delete_message(chat_id, message_id).await;
+        let Some(session) = self.logins.get_mut(chat_id) else {
+            return Ok(());
+        };
+
+        match session.step {
+            LoginStep::Login => {
+                session.login = Some(text.to_string());
+                session.step = LoginStep::Password;
+                self.telegram
+                    .edit_message(chat_id, session.prompt_message_id, "Parol yozing")
+                    .await?;
+            }
+            LoginStep::Password => {
+                let login = session.login.clone().unwrap_or_default();
+                let prompt_message_id = session.prompt_message_id;
+                self.logins.remove(chat_id);
+
+                match ChatRole::from_credentials(&login, text) {
+                    Some(role) => {
+                        self.registry
+                            .set_role(role, chat_id)
+                            .map_err(|error| format!("role saqlanmadi: {error}"))?;
+                        self.telegram
+                            .edit_message(
+                                chat_id,
+                                prompt_message_id,
+                                &format!("Qabul qilindi: <b>{}</b>", role.label()),
+                            )
+                            .await?;
+                    }
+                    None => {
+                        self.telegram
+                            .edit_message(chat_id, prompt_message_id, "Login yoki parol noto'g'ri.")
+                            .await?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -103,8 +174,16 @@ impl BotApp {
     ) -> Result<(), Box<dyn std::error::Error>> {
         match calculate_order(&order) {
             Ok(result) => {
-                let order_chat_id = self.config.order_chat_id.expect("checked by setup mode");
-                let calc_chat_id = self.config.calc_chat_id.expect("checked by setup mode");
+                let order_chat_id = self
+                    .registry
+                    .value()
+                    .order_chat_id
+                    .expect("checked by setup mode");
+                let calc_chat_id = self
+                    .registry
+                    .value()
+                    .calc_chat_id
+                    .expect("checked by setup mode");
                 self.telegram
                     .send_message(order_chat_id, &order_message(&order)?)
                     .await?;
@@ -133,7 +212,7 @@ impl BotApp {
 
 fn setup_message(chat_id: i64) -> String {
     format!(
-        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\nTo'liq ishlatish uchun env kerak:\n<code>ORDER_CHAT_ID=...</code>\n<code>CALC_CHAT_ID=...</code>\n\nGuruhlarga botni qo'shib, har birida /chatid yozing."
+        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\n/login yozing va role ulang:\nma'lumot guruhi: guruh / @#12asn\nhisob guruhi: hisob / @#12hsb\nadmin chat: chat / @#12"
     )
 }
 

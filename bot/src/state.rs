@@ -56,6 +56,45 @@ impl Sessions {
     }
 }
 
+#[derive(Default)]
+pub struct LoginSessions {
+    values: HashMap<i64, LoginSession>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoginSession {
+    pub step: LoginStep,
+    pub prompt_message_id: i64,
+    pub login: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginStep {
+    Login,
+    Password,
+}
+
+impl LoginSessions {
+    pub fn start(&mut self, chat_id: i64, prompt_message_id: i64) {
+        self.values.insert(
+            chat_id,
+            LoginSession {
+                step: LoginStep::Login,
+                prompt_message_id,
+                login: None,
+            },
+        );
+    }
+
+    pub fn remove(&mut self, chat_id: i64) {
+        self.values.remove(&chat_id);
+    }
+
+    pub fn get_mut(&mut self, chat_id: i64) -> Option<&mut LoginSession> {
+        self.values.get_mut(&chat_id)
+    }
+}
+
 impl Step {
     pub fn next_prompt(self) -> &'static str {
         match self {

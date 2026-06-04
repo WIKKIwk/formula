@@ -21,6 +21,7 @@ pub struct Update {
 
 #[derive(Debug, Deserialize)]
 pub struct Message {
+    pub message_id: i64,
     pub chat: Chat,
     pub text: Option<String>,
 }
@@ -35,6 +36,25 @@ struct SendMessage<'a> {
     chat_id: i64,
     text: &'a str,
     parse_mode: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct EditMessage<'a> {
+    chat_id: i64,
+    message_id: i64,
+    text: &'a str,
+    parse_mode: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct DeleteMessage {
+    chat_id: i64,
+    message_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct SentMessage {
+    message_id: i64,
 }
 
 impl TelegramClient {
@@ -70,7 +90,7 @@ impl TelegramClient {
         &self,
         chat_id: i64,
         text: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<i64, Box<dyn std::error::Error>> {
         let payload = SendMessage {
             chat_id,
             text,
@@ -86,9 +106,60 @@ impl TelegramClient {
         if !status.is_success() {
             return Err(format!("Telegram sendMessage HTTP status: {status}").into());
         }
+        let response = response.json::<ApiResponse<SentMessage>>().await?;
+        if !response.ok {
+            return Err("Telegram sendMessage ok=false".into());
+        }
+        Ok(response.result.message_id)
+    }
+
+    pub async fn edit_message(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+        text: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let payload = EditMessage {
+            chat_id,
+            message_id,
+            text,
+            parse_mode: "HTML",
+        };
+        let response = self
+            .client
+            .post(self.url("editMessageText"))
+            .json(&payload)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram editMessage HTTP status: {status}").into());
+        }
         let response = response.json::<serde_json::Value>().await?;
         if response.get("ok").and_then(|value| value.as_bool()) != Some(true) {
-            return Err(format!("Telegram sendMessage xato: {response}").into());
+            return Err(format!("Telegram editMessage xato: {response}").into());
+        }
+        Ok(())
+    }
+
+    pub async fn delete_message(
+        &self,
+        chat_id: i64,
+        message_id: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let payload = DeleteMessage {
+            chat_id,
+            message_id,
+        };
+        let response = self
+            .client
+            .post(self.url("deleteMessage"))
+            .json(&payload)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Ok(());
         }
         Ok(())
     }

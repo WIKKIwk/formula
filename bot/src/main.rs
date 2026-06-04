@@ -3,6 +3,7 @@ mod config;
 mod formatter;
 mod handlers;
 mod order;
+mod registry;
 mod state;
 mod telegram;
 
