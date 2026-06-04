@@ -47,6 +47,20 @@ impl BotApp {
         let text = message.text.unwrap_or_default();
         let trimmed = text.trim();
 
+        if matches!(trimmed, "/chatid" | "chatid") {
+            self.telegram
+                .send_message(chat_id, &format!("Bu chat ID: <code>{chat_id}</code>"))
+                .await?;
+            return Ok(());
+        }
+
+        if !self.config.is_ready() {
+            self.telegram
+                .send_message(chat_id, &setup_message(chat_id))
+                .await?;
+            return Ok(());
+        }
+
         if matches!(trimmed, "/start" | "/new" | "new" | "yangi") {
             let prompt = self.sessions.start(chat_id);
             self.telegram.send_message(chat_id, prompt).await?;
@@ -89,11 +103,13 @@ impl BotApp {
     ) -> Result<(), Box<dyn std::error::Error>> {
         match calculate_order(&order) {
             Ok(result) => {
+                let order_chat_id = self.config.order_chat_id.expect("checked by setup mode");
+                let calc_chat_id = self.config.calc_chat_id.expect("checked by setup mode");
                 self.telegram
-                    .send_message(self.config.order_chat_id, &order_message(&order)?)
+                    .send_message(order_chat_id, &order_message(&order)?)
                     .await?;
                 self.telegram
-                    .send_message(self.config.calc_chat_id, &calc_message(&order, &result)?)
+                    .send_message(calc_chat_id, &calc_message(&order, &result)?)
                     .await?;
                 self.telegram
                     .send_message(
@@ -113,6 +129,12 @@ impl BotApp {
         }
         Ok(())
     }
+}
+
+fn setup_message(chat_id: i64) -> String {
+    format!(
+        "Bot setup rejimida.\nBu chat ID: <code>{chat_id}</code>\n\nTo'liq ishlatish uchun env kerak:\n<code>ORDER_CHAT_ID=...</code>\n<code>CALC_CHAT_ID=...</code>\n\nGuruhlarga botni qo'shib, har birida /chatid yozing."
+    )
 }
 
 enum Flow {
