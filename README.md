@@ -177,9 +177,17 @@ Natija:
 yakuniy uzunlik: 12000
 ```
 
-## Excel yoki CSV Faylni Hisoblash
+## Faylni Hisoblash
 
-CSV yoki Excel fayl berilganda dastur ustunlarni o'zi topadi va yangi CSV fayl chiqaradi.
+Fayl berilganda dastur ustunlarni o'zi topadi va natijani input bilan bir xil formatda qaytaradi.
+
+Hozir bir xil formatda qaytarish qo'llab-quvvatlanadi:
+
+- `.xlsx -> .xlsx`
+- `.csv -> .csv`
+- `.tsv -> .tsv`
+
+`.ods`, `.pdf`, `.html`, `.xls`, `.xlsm` formatlari taniladi, lekin hozircha ularni o'z formatida qayta yozish qo'shilmagan. Dastur bunday holatda aniq xato chiqaradi, jim konvert qilib yubormaydi.
 
 Kerakli ustunlar:
 
@@ -196,6 +204,12 @@ CSV fayl:
 cargo run -- --file examples/sample.csv
 ```
 
+TSV fayl:
+
+```bash
+cargo run -- --file ish.tsv
+```
+
 Excel fayl:
 
 ```bash
@@ -205,34 +219,22 @@ cargo run -- --file ish.xlsx
 Output nomini o'zingiz berishingiz ham mumkin:
 
 ```bash
-cargo run -- --file ish.xlsx --out natija.csv
-```
-
-Excel faylning o'zini formatini saqlagan holda yangi `.xlsx` qilib chiqarish:
-
-```bash
-cargo run -- --file ish.xlsx --write-xlsx
-```
-
-Yoki output nomi bilan:
-
-```bash
 cargo run -- --file ish.xlsx --out natija.xlsx
 ```
 
 Agar `--out` berilmasa, dastur fayl yoniga shunday output chiqaradi:
 
 ```text
-ish_hisoblangan.csv
-```
-
-`--write-xlsx` ishlatilsa:
-
-```text
 ish_hisoblangan.xlsx
 ```
 
-Excel outputda dastur mavjud ustunlarga tegmaydi. Sheetdagi eng oxirgi ishlatilgan ustundan keyin `HISOBLANGAN_UZUNLIK` ustunini qo'shib, natijalarni o'sha yerga yozadi. Xato qatorga `XATO: ...` deb yoziladi.
+CSV bo'lsa:
+
+```text
+ish_hisoblangan.csv
+```
+
+Excel outputda dastur mavjud ustunlarga tegmaydi. Sheetdagi eng oxirgi ishlatilgan ustundan keyin `HISOBLANGAN_UZUNLIK` ustunini qo'shib, natijalarni o'sha yerga yozadi. CSV/TSV outputda esa oxiriga report ustunlari qo'shiladi. Xato qatorga `XATO: ...` deb yoziladi.
 
 Outputga 3 ta ustun qo'shiladi:
 

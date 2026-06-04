@@ -360,30 +360,35 @@ fn should_process_file(args: &[String]) -> bool {
 }
 
 fn looks_like_table_file(path: &str) -> bool {
-    matches!(
-        Path::new(path)
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .map(str::to_lowercase)
-            .as_deref(),
-        Some("csv" | "xlsx" | "xlsm" | "xls")
-    )
+    FileFormat::from_path(Path::new(path)).is_some()
 }
 
 fn process_file_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let input = read_optional_text(args, "--file")
         .or_else(|| args.first().filter(|arg| !arg.starts_with("--")).cloned())
         .ok_or("fayl yo'li berilmagan")?;
-    let output = read_optional_text(args, "--out").unwrap_or_else(|| {
-        if wants_xlsx_output(args, None) {
-            default_xlsx_output_path(&input)
-        } else {
-            default_csv_output_path(&input)
-        }
-    });
+    let input_path = Path::new(&input);
+    let input_format = FileFormat::from_path(input_path)
+        .ok_or_else(|| format!("qo'llab-quvvatlanmaydigan fayl: {}", input_path.display()))?;
+    let output = read_optional_text(args, "--out").unwrap_or_else(|| default_output_path(&input));
+    let output_path = Path::new(&output);
+    let output_format = FileFormat::from_path(output_path).ok_or_else(|| {
+        format!(
+            "output format qo'llab-quvvatlanmaydi: {}",
+            output_path.display()
+        )
+    })?;
 
-    if wants_xlsx_output(args, Some(&output)) {
-        let report = write_results_to_xlsx(Path::new(&input), Path::new(&output))?;
+    if !args.iter().any(|arg| arg == "--out") && input_format != output_format {
+        return Err(format!(
+            "output formati input bilan bir xil bo'lishi kerak: input={:?}, output={:?}",
+            input_format, output_format
+        )
+        .into());
+    }
+
+    if output_format == FileFormat::Xlsx || args.iter().any(|arg| arg == "--write-xlsx") {
+        let report = write_results_to_xlsx(input_path, output_path)?;
 
         println!("Hisoblandi: {}", report.processed_count);
         println!("OK: {}", report.ok_count);
@@ -393,9 +398,9 @@ fn process_file_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let rows = read_table(Path::new(&input))?;
+    let rows = read_table(input_path)?;
     let report = calculate_table(&rows)?;
-    write_report_csv(Path::new(&output), &report)?;
+    write_report_delimited(output_path, &report, output_format.delimiter()?)?;
 
     println!("Hisoblandi: {}", report.processed_count);
     println!("OK: {}", report.ok_count);
@@ -405,42 +410,66 @@ fn process_file_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn wants_xlsx_output(args: &[String], output: Option<&str>) -> bool {
-    args.iter().any(|arg| arg == "--write-xlsx")
-        || output.is_some_and(|path| {
-            Path::new(path)
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
-        })
-}
-
-fn default_csv_output_path(input: &str) -> String {
+fn default_output_path(input: &str) -> String {
     let path = Path::new(input);
     let stem = path
         .file_stem()
         .and_then(|stem| stem.to_str())
         .unwrap_or("output");
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("csv");
 
     parent
-        .join(format!("{stem}_hisoblangan.csv"))
+        .join(format!("{stem}_hisoblangan.{extension}"))
         .to_string_lossy()
         .to_string()
 }
 
-fn default_xlsx_output_path(input: &str) -> String {
-    let path = Path::new(input);
-    let stem = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("output");
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileFormat {
+    Xlsx,
+    Xlsm,
+    Xls,
+    Ods,
+    Csv,
+    Tsv,
+    Html,
+    Pdf,
+}
 
-    parent
-        .join(format!("{stem}_hisoblangan.xlsx"))
-        .to_string_lossy()
-        .to_string()
+impl FileFormat {
+    fn from_path(path: &Path) -> Option<Self> {
+        match path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_lowercase)
+            .as_deref()
+        {
+            Some("xlsx") => Some(Self::Xlsx),
+            Some("xlsm") => Some(Self::Xlsm),
+            Some("xls") => Some(Self::Xls),
+            Some("ods") => Some(Self::Ods),
+            Some("csv") => Some(Self::Csv),
+            Some("tsv") => Some(Self::Tsv),
+            Some("html" | "htm") => Some(Self::Html),
+            Some("pdf") => Some(Self::Pdf),
+            _ => None,
+        }
+    }
+
+    fn delimiter(self) -> Result<u8, Box<dyn Error>> {
+        match self {
+            Self::Csv => Ok(b','),
+            Self::Tsv => Ok(b'\t'),
+            _ => Err(format!(
+                "{self:?} formatini shu formatda qayta yozish hozircha qo'llab-quvvatlanmaydi"
+            )
+            .into()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -485,14 +514,24 @@ fn read_table(path: &Path) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
         .as_deref()
     {
         Some("csv") => read_csv(path),
-        Some("xlsx" | "xlsm" | "xls") => read_excel(path),
+        Some("tsv") => read_tsv(path),
+        Some("xlsx" | "xlsm" | "xls" | "ods") => read_excel(path),
         _ => Err(format!("qo'llab-quvvatlanmaydigan fayl: {}", path.display()).into()),
     }
 }
 
 fn read_csv(path: &Path) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
+    read_delimited(path, b',')
+}
+
+fn read_tsv(path: &Path) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
+    read_delimited(path, b'\t')
+}
+
+fn read_delimited(path: &Path, delimiter: u8) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
+        .delimiter(delimiter)
         .flexible(true)
         .from_path(path)?;
     let mut rows = Vec::new();
@@ -615,12 +654,10 @@ fn calculate_sheet(rows: &[Vec<String>]) -> Result<SheetReport, Box<dyn Error>> 
 }
 
 fn write_results_to_xlsx(input: &Path, output: &Path) -> Result<SheetReport, Box<dyn Error>> {
-    if !input
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("xlsx"))
+    if FileFormat::from_path(input) != Some(FileFormat::Xlsx)
+        || FileFormat::from_path(output) != Some(FileFormat::Xlsx)
     {
-        return Err("--write-xlsx hozircha faqat .xlsx fayl uchun ishlaydi".into());
+        return Err("xlsx formatida yozish faqat .xlsx -> .xlsx uchun ishlaydi".into());
     }
 
     let rows = read_table(input)?;
@@ -789,14 +826,20 @@ fn parse_decimal(value: &str) -> Result<f64, String> {
         .map_err(|_| format!("raqam noto'g'ri: '{value}'"))
 }
 
-fn write_report_csv(path: &Path, report: &TableReport) -> Result<(), Box<dyn Error>> {
+fn write_report_delimited(
+    path: &Path,
+    report: &TableReport,
+    delimiter: u8,
+) -> Result<(), Box<dyn Error>> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)?;
         }
     }
 
-    let mut writer = csv::Writer::from_path(path)?;
+    let mut writer = csv::WriterBuilder::new()
+        .delimiter(delimiter)
+        .from_path(path)?;
     writer.write_record(&report.headers)?;
     for row in &report.rows {
         writer.write_record(row)?;
@@ -1036,9 +1079,9 @@ fn print_usage() {
     eprintln!("  cargo run");
     eprintln!("  cargo run -- --demo");
     eprintln!("  cargo run -- --file ish.xlsx");
-    eprintln!("  cargo run -- --file ish.xlsx --out natija.csv");
-    eprintln!("  cargo run -- --file ish.xlsx --write-xlsx");
     eprintln!("  cargo run -- --file ish.xlsx --out natija.xlsx");
+    eprintln!("  cargo run -- --file ish.csv");
+    eprintln!("  cargo run -- --file ish.tsv");
     eprintln!("  cargo run -- examples/sample.csv");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30");
     eprintln!("  cargo run -- --kg 300 --razmer 530 --q1 pet --m1 12 --q2 \"pe pr\" --m2 30 --waste 5 --round 500");
