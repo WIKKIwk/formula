@@ -359,7 +359,7 @@ Bot bilan ishlash:
 
 Bot login va parol xabarlarini o'chiradi. Prompt xabarini `Login yozing` -> `Parol yozing` -> `Qabul qilindi: ...` qilib edit qiladi. Rolelar `bot_state.json`ga saqlanadi.
 
-Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, 1/2/3-qavat material va mikronlari, eslatma va rasm. 2 yoki 3-qavat kerak bo'lmasa `-` yoziladi. Rasm yuborilsa ma'lumot guruhiga caption bilan tushadi, rasm bo'lmasa rasm bosqichida `-` yoziladi.
+Buyurtma admin chatda bitta anketa xabarini edit qilib yig'iladi. Admin javoblari o'chiriladi, anketa esa to'ldirib boriladi. Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, eslatma va rasm. Material matnidan 1/2/3-qavat material va mikronlari avtomatik ajratiladi. Rasm yuborilsa ma'lumot guruhiga caption bilan tushadi, rasm bo'lmasa rasm bosqichida `-` yoziladi.
 
 ## Demo Qatorlar
 

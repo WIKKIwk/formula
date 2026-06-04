@@ -1,6 +1,6 @@
 use crate::calc::calculate_order;
 use crate::config::Config;
-use crate::formatter::{calc_message, order_message};
+use crate::formatter::{calc_message, draft_form_message, order_message};
 use crate::material_parser::parse_material_layers;
 use crate::order::OrderDraft;
 use crate::registry::{ChatRole, RegistryStore};
@@ -92,15 +92,35 @@ impl BotApp {
                     .await?;
                 return Ok(());
             }
-            let prompt = self.sessions.start(chat_id);
-            self.telegram.send_message(chat_id, prompt).await?;
+            let _ = self.telegram.delete_message(chat_id, message_id).await;
+            let draft = Sessions::initial_draft();
+            let prompt_message_id = self
+                .telegram
+                .send_message(
+                    chat_id,
+                    &draft_form_message(&draft, Step::OrderNumber.next_prompt()),
+                )
+                .await?;
+            self.sessions.start(chat_id, prompt_message_id);
             return Ok(());
         }
         if matches!(trimmed, "/cancel" | "cancel" | "bekor") {
+            let _ = self.telegram.delete_message(chat_id, message_id).await;
+            if let Some(session) = self.sessions.get_mut(chat_id) {
+                let _ = self
+                    .telegram
+                    .edit_message(
+                        chat_id,
+                        session.prompt_message_id,
+                        "Bekor qilindi. Yangi buyurtma uchun /new yozing.",
+                    )
+                    .await;
+            } else {
+                self.telegram
+                    .send_message(chat_id, "Yangi buyurtma uchun /new yozing.")
+                    .await?;
+            }
             self.sessions.remove(chat_id);
-            self.telegram
-                .send_message(chat_id, "Bekor qilindi. Yangi buyurtma uchun /new yozing.")
-                .await?;
             return Ok(());
         }
 
@@ -108,31 +128,60 @@ impl BotApp {
             if !self.is_admin_chat(chat_id) {
                 return Ok(());
             }
-            let prompt = self.sessions.start(chat_id);
-            self.telegram.send_message(chat_id, prompt).await?;
+            let _ = self.telegram.delete_message(chat_id, message_id).await;
+            let draft = Sessions::initial_draft();
+            let prompt_message_id = self
+                .telegram
+                .send_message(
+                    chat_id,
+                    &draft_form_message(&draft, Step::OrderNumber.next_prompt()),
+                )
+                .await?;
+            self.sessions.start(chat_id, prompt_message_id);
             return Ok(());
         }
 
-        let outcome = {
+        let _ = self.telegram.delete_message(chat_id, message_id).await;
+        let (outcome, prompt_message_id, draft, step) = {
             let session = self.sessions.get_mut(chat_id).expect("session exists");
-            apply_answer(
+            let outcome = apply_answer(
                 &mut session.draft,
                 &mut session.step,
                 trimmed,
                 photo_file_id,
+            );
+            (
+                outcome,
+                session.prompt_message_id,
+                session.draft.clone(),
+                session.step,
             )
         };
 
         match outcome {
             Flow::Ask(prompt) => {
-                let _ = self.telegram.send_message(chat_id, prompt).await?;
+                self.telegram
+                    .edit_message(
+                        chat_id,
+                        prompt_message_id,
+                        &draft_form_message(&draft, prompt),
+                    )
+                    .await?;
             }
             Flow::Done(order) => {
+                let _ = self
+                    .telegram
+                    .edit_message(chat_id, prompt_message_id, "Buyurtma yuborilyapti...")
+                    .await;
                 self.sessions.remove(chat_id);
                 self.finish_order(chat_id, order).await?;
             }
             Flow::Error(message) => {
-                let _ = self.telegram.send_message(chat_id, &message).await?;
+                let text =
+                    draft_form_message(&draft, &format!("{message}\n{}", step.next_prompt()));
+                self.telegram
+                    .edit_message(chat_id, prompt_message_id, &text)
+                    .await?;
             }
         }
         Ok(())

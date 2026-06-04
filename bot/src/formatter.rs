@@ -28,6 +28,22 @@ pub fn order_message(order: &OrderDraft) -> Result<String, String> {
     ))
 }
 
+pub fn draft_form_message(order: &OrderDraft, prompt: &str) -> String {
+    format!(
+        "<b>DMBO</b>\nBuyurtma raqami: {}\nMijoz: {}\nMahsulot: {}\nHolat: {}\n\n1. Material: {}\n2. Rang: {}\n3. Tiraj: {}\n4. uzunligi: {}\n\n<b>Eslatm:</b> {}\n\n{}",
+        esc(display_text(&order.order_number)),
+        esc(display_text(&order.customer)),
+        esc(display_text(&order.product)),
+        esc(display_text(&order.status)),
+        esc(display_text(&order.material_display)),
+        esc(display_text(&order.color)),
+        esc(&display_kg(order.kg)),
+        esc(&display_width(order.width_mm)),
+        esc(order.note.as_deref().unwrap_or("")),
+        esc(prompt)
+    )
+}
+
 pub fn calc_message(order: &OrderDraft, result: &CalcResult) -> Result<String, String> {
     let order_number = OrderDraft::require_text(&order.order_number, "Buyurtma raqami")?;
     let kg = OrderDraft::require_number(order.kg, "KG")?;
@@ -59,6 +75,22 @@ pub fn calc_message(order: &OrderDraft, result: &CalcResult) -> Result<String, S
         result.waste_length,
         result.rounded_length
     ))
+}
+
+fn display_text(value: &Option<String>) -> &str {
+    value.as_deref().unwrap_or("")
+}
+
+fn display_kg(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.0} kg"))
+        .unwrap_or_default()
+}
+
+fn display_width(value: Option<f64>) -> String {
+    value
+        .map(|value| format!("{value:.0}mm"))
+        .unwrap_or_default()
 }
 
 fn third_line(material: &str, micron: &str) -> String {

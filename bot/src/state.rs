@@ -6,6 +6,7 @@ use std::collections::HashMap;
 pub struct Session {
     pub step: Step,
     pub draft: OrderDraft,
+    pub prompt_message_id: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,18 +35,22 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    pub fn start(&mut self, chat_id: i64) -> &'static str {
+    pub fn initial_draft() -> OrderDraft {
+        OrderDraft {
+            date: Some(Local::now().format("%d/%m/%y").to_string()),
+            ..OrderDraft::default()
+        }
+    }
+
+    pub fn start(&mut self, chat_id: i64, prompt_message_id: i64) {
         self.values.insert(
             chat_id,
             Session {
                 step: Step::OrderNumber,
-                draft: OrderDraft {
-                    date: Some(Local::now().format("%d/%m/%y").to_string()),
-                    ..OrderDraft::default()
-                },
+                draft: Self::initial_draft(),
+                prompt_message_id,
             },
         );
-        "Buyurtma raqamini yozing. Masalan: T2437"
     }
 
     pub fn remove(&mut self, chat_id: i64) {
