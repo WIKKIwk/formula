@@ -177,9 +177,11 @@ Yoki qisqa:
 make run
 ```
 
+Interaktiv rejim siklda ishlaydi: bitta mahsulotni hisoblab bo'lgach yana yangi hisob boshlaydi. Chiqish uchun `Mahsulot og'irligi, kg` joyiga `q` yoziladi.
+
 Dastur ketma-ket so'raydi:
 
-- `KG`
+- `Mahsulot og'irligi, kg`
 - `RAZMER mm`
 - `1-qavat material`
 - `1-qavat mikron`
@@ -191,6 +193,7 @@ Dastur ketma-ket so'raydi:
 - `Yaxlitlash`
 
 3-qavat kerak bo'lmasa, `3-qavat material` joyini bo'sh qoldirib Enter bosiladi. 2-qavat ham bo'sh qoldirilsa, faqat 1-qavat bilan hisoblaydi.
+`Atxod foizi [5]` va `Yaxlitlash [500]` joyida Enter bosilsa default qiymatlar olinadi.
 
 Misol:
 

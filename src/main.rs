@@ -163,62 +163,71 @@ fn example_1178() -> Calculation<'static> {
 
 fn run_interactive() -> Result<(), String> {
     println!("Terminal hisoblash rejimi");
+    println!("Chiqish uchun KG joyiga q yozing.");
     println!("3-qavatni skip qilish uchun material joyini bo'sh qoldiring.");
+    println!("Atxod foizi va yaxlitlashda Enter bosilsa default qiymat olinadi.");
     println!();
 
-    let kg = prompt_decimal("KG")?;
-    let razmer_mm = prompt_decimal("RAZMER mm")?;
-    let first_material = prompt_required("1-qavat material")?;
-    let first_micron_text = prompt_required("1-qavat mikron")?;
-    let first_micron = parse_micron(&first_micron_text)?;
-    let second_material = prompt_optional("2-qavat material (bo'sh bo'lsa skip)")?;
-    let second_micron_text = if second_material.is_empty() {
-        "--".to_string()
-    } else {
-        prompt_required("2-qavat mikron")?
-    };
-    let third_material = prompt_optional("3-qavat material (bo'sh bo'lsa skip)")?;
-    let third_micron_text = if third_material.is_empty() {
-        String::new()
-    } else {
-        prompt_required("3-qavat mikron")?
-    };
-    let waste_percent = prompt_optional_decimal("Atxod foizi", 5.0)?;
-    let round_to = prompt_optional_decimal("Yaxlitlash", 500.0)?;
-    let (second_material, second_micron_text) = merge_optional_third_layer(
-        second_material,
-        second_micron_text,
-        third_material,
-        third_micron_text,
-    )?;
-    let second_micron = if is_empty_material(&second_material) {
-        0
-    } else {
-        parse_micron(&second_micron_text)?
-    };
+    loop {
+        println!("--- Yangi hisob ---");
+        let Some(kg) = prompt_decimal_or_quit("Mahsulot og'irligi, kg (q = chiqish)")? else {
+            println!("Chiqildi.");
+            return Ok(());
+        };
+        let razmer_mm = prompt_decimal("Razmer, mm")?;
+        let first_material = prompt_required("1-qavat material")?;
+        let first_micron_text = prompt_micron_required("1-qavat mikron")?;
+        let first_micron = parse_micron(&first_micron_text)?;
+        let second_material = prompt_optional("2-qavat material (bo'sh bo'lsa skip)")?;
+        let second_micron_text = if second_material.is_empty() {
+            "--".to_string()
+        } else {
+            prompt_micron_required("2-qavat mikron")?
+        };
+        let third_material = prompt_optional("3-qavat material (bo'sh bo'lsa skip)")?;
+        let third_micron_text = if third_material.is_empty() {
+            String::new()
+        } else {
+            prompt_micron_required("3-qavat mikron")?
+        };
+        let waste_percent = prompt_optional_decimal("Atxod foizi", 5.0)?;
+        let round_to = prompt_optional_decimal("Yaxlitlash", 500.0)?;
+        let (second_material, second_micron_text) = merge_optional_third_layer(
+            second_material,
+            second_micron_text,
+            third_material,
+            third_micron_text,
+        )?;
+        let second_micron = if is_empty_material(&second_material) {
+            0
+        } else {
+            parse_micron(&second_micron_text)?
+        };
 
-    let calculation = Calculation {
-        kg,
-        razmer_mm,
-        first_layer: Layer {
-            material: Box::leak(first_material.into_boxed_str()),
-            micron_text: Box::leak(first_micron_text.into_boxed_str()),
-            micron: first_micron,
-        },
-        second_layer: Layer {
-            material: Box::leak(second_material.into_boxed_str()),
-            micron_text: Box::leak(second_micron_text.into_boxed_str()),
-            micron: second_micron,
-        },
-        waste_percent,
-        round_to,
-    };
+        let calculation = Calculation {
+            kg,
+            razmer_mm,
+            first_layer: Layer {
+                material: &first_material,
+                micron_text: &first_micron_text,
+                micron: first_micron,
+            },
+            second_layer: Layer {
+                material: &second_material,
+                micron_text: &second_micron_text,
+                micron: second_micron,
+            },
+            waste_percent,
+            round_to,
+        };
 
-    let result = calculate(&calculation)?;
-    println!();
-    print_result(&calculation, &result);
-
-    Ok(())
+        println!();
+        match calculate(&calculation) {
+            Ok(result) => print_result(&calculation, &result),
+            Err(message) => println!("Xato: {message}"),
+        }
+        println!();
+    }
 }
 
 fn merge_optional_third_layer(
@@ -286,6 +295,24 @@ fn prompt_decimal(label: &str) -> Result<f64, String> {
     }
 }
 
+fn prompt_decimal_or_quit(label: &str) -> Result<Option<f64>, String> {
+    loop {
+        let value = prompt_optional(label)?;
+        if matches!(value.trim().to_lowercase().as_str(), "q" | "quit" | "exit") {
+            return Ok(None);
+        }
+        if value.trim().is_empty() {
+            println!("{label} bo'sh bo'lmasligi kerak.");
+            continue;
+        }
+        match parse_decimal(&value) {
+            Ok(number) if number > 0.0 => return Ok(Some(number)),
+            Ok(_) => println!("{label} 0 dan katta bo'lishi kerak."),
+            Err(message) => println!("{message}"),
+        }
+    }
+}
+
 fn prompt_optional_decimal(label: &str, default: f64) -> Result<f64, String> {
     loop {
         let value = prompt_optional(&format!("{label} [{default}]"))?;
@@ -295,6 +322,16 @@ fn prompt_optional_decimal(label: &str, default: f64) -> Result<f64, String> {
         match parse_decimal(&value) {
             Ok(number) if number > 0.0 => return Ok(number),
             Ok(_) => println!("{label} 0 dan katta bo'lishi kerak."),
+            Err(message) => println!("{message}"),
+        }
+    }
+}
+
+fn prompt_micron_required(label: &str) -> Result<String, String> {
+    loop {
+        let value = prompt_required(label)?;
+        match parse_micron(&value) {
+            Ok(_) => return Ok(value),
             Err(message) => println!("{message}"),
         }
     }
