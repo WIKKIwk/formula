@@ -3,6 +3,9 @@ name = "rust_math"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [".", "bot"]
+
 [dependencies]
 calamine = "0.35.0"
 csv = "1.4.0"

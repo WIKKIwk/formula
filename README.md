@@ -322,6 +322,42 @@ pe pr, pe-pr, PE PR => pe pr
 
 Bitta qavat bo'sh bo'lsa `--`, u 0 deb olinadi. Masalan 1-qavat bo'sh, 2-qavat `pe pr 60` bo'lsa faqat `PE 60` hisoblanadi.
 
+## Telegram Bot
+
+Bot alohida `bot/` papkada turadi. U buyurtma ma'lumotlarini savol-javob qilib yig'adi:
+
+- bitta guruhga screenshotdagi kabi chiroyli buyurtma matnini yuboradi;
+- ikkinchi guruhga hisob-kitob va yakuniy uzunlikni yuboradi.
+
+Kerakli env:
+
+```bash
+export BOT_TOKEN="telegram_bot_token"
+export ORDER_CHAT_ID="-1001234567890"
+export CALC_CHAT_ID="-1009876543210"
+```
+
+Ishga tushirish:
+
+```bash
+make bot-run
+```
+
+Tekshirish:
+
+```bash
+make bot-check
+```
+
+Bot bilan ishlash:
+
+```text
+/new     yangi buyurtma boshlaydi
+/cancel  joriy buyurtmani bekor qiladi
+```
+
+Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, 1/2/3-qavat material va mikronlari, eslatma. 2 yoki 3-qavat kerak bo'lmasa `-` yoziladi.
+
 ## Demo Qatorlar
 
 Rasmdagi test qatorlarni hisoblatish:

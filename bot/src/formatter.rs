@@ -1,0 +1,77 @@
+use crate::calc::CalcResult;
+use crate::order::OrderDraft;
+
+pub fn order_message(order: &OrderDraft) -> Result<String, String> {
+    let order_number = OrderDraft::require_text(&order.order_number, "Buyurtma raqami")?;
+    let date = OrderDraft::require_text(&order.date, "Sana")?;
+    let customer = OrderDraft::require_text(&order.customer, "Mijoz")?;
+    let product = OrderDraft::require_text(&order.product, "Mahsulot")?;
+    let status = OrderDraft::require_text(&order.status, "Holat")?;
+    let material = OrderDraft::require_text(&order.material_display, "Material")?;
+    let color = OrderDraft::require_text(&order.color, "Rang")?;
+    let kg = OrderDraft::require_number(order.kg, "Tiraj")?;
+    let width = OrderDraft::require_number(order.width_mm, "Uzunligi")?;
+    let note = order.note.as_deref().unwrap_or("-");
+
+    Ok(format!(
+        "<b>DMBO</b>\nBuyurtma raqami: №{}  {}\nMijoz: {}\nMahsulot: {}\nHolat: {}\n\n1. Material: {}\n2. Rang: {}\n3. Tiraj: {:.0} kg\n4. uzunligi: {:.0}mm\n\n<b>Eslatm:</b> {}",
+        esc(&order_number),
+        esc(&date),
+        esc(&customer),
+        esc(&product),
+        esc(&status),
+        esc(&material),
+        esc(&color),
+        kg,
+        width,
+        esc(note)
+    ))
+}
+
+pub fn calc_message(order: &OrderDraft, result: &CalcResult) -> Result<String, String> {
+    let order_number = OrderDraft::require_text(&order.order_number, "Buyurtma raqami")?;
+    let kg = OrderDraft::require_number(order.kg, "KG")?;
+    let width = OrderDraft::require_number(order.width_mm, "RAZMER")?;
+    let q1 = OrderDraft::require_text(&order.first_material, "1-qavat")?;
+    let m1 = OrderDraft::require_text(&order.first_micron, "1-mikron")?;
+    let q2 = order.second_material.as_deref().unwrap_or("--");
+    let m2 = order.second_micron.as_deref().unwrap_or("--");
+    let q3 = order.third_material.as_deref().unwrap_or("--");
+    let m3 = order.third_micron.as_deref().unwrap_or("--");
+
+    Ok(format!(
+        "<b>Hisob-kitob</b>\nBuyurtma: №{}\nKG: {:.0}\nRAZMER: {:.0} mm\n\n1-qavat: {} {} => {}\n2-qavat: {} {}{}\n\nKoeff: {} + {} = {}\nRazmer: {:.0} mm = {} sm\nBase: {:.0}\nAtxod 5%: {:.0}\n\n<b>Yakuniy uzunlik: {:.0}</b>",
+        esc(&order_number),
+        kg,
+        width,
+        esc(&q1),
+        esc(&m1),
+        result.first_coeff,
+        esc(q2),
+        esc(m2),
+        third_line(q3, m3),
+        result.first_coeff,
+        result.other_coeff,
+        result.coeff_sum,
+        width,
+        result.width_sm,
+        result.base_length,
+        result.waste_length,
+        result.rounded_length
+    ))
+}
+
+fn third_line(material: &str, micron: &str) -> String {
+    if material.trim().is_empty() || material == "--" {
+        String::new()
+    } else {
+        format!("\n3-qavat: {} {}", esc(material), esc(micron))
+    }
+}
+
+fn esc(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}

@@ -1,0 +1,97 @@
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone)]
+pub struct TelegramClient {
+    token: String,
+    client: Client,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApiResponse<T> {
+    pub ok: bool,
+    pub result: T,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Update {
+    pub update_id: i64,
+    pub message: Option<Message>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Message {
+    pub chat: Chat,
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Chat {
+    pub id: i64,
+}
+
+#[derive(Debug, Serialize)]
+struct SendMessage<'a> {
+    chat_id: i64,
+    text: &'a str,
+    parse_mode: &'a str,
+}
+
+impl TelegramClient {
+    pub fn new(token: String) -> Self {
+        Self {
+            token,
+            client: Client::new(),
+        }
+    }
+
+    pub async fn get_updates(
+        &self,
+        offset: Option<i64>,
+    ) -> Result<Vec<Update>, Box<dyn std::error::Error>> {
+        let url = self.url("getUpdates");
+        let mut request = self.client.get(url).query(&[("timeout", "30")]);
+        if let Some(offset) = offset {
+            request = request.query(&[("offset", offset.to_string())]);
+        }
+        let response = request
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<ApiResponse<Vec<Update>>>()
+            .await?;
+        if !response.ok {
+            return Err("Telegram getUpdates ok=false".into());
+        }
+        Ok(response.result)
+    }
+
+    pub async fn send_message(
+        &self,
+        chat_id: i64,
+        text: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let payload = SendMessage {
+            chat_id,
+            text,
+            parse_mode: "HTML",
+        };
+        let response = self
+            .client
+            .post(self.url("sendMessage"))
+            .json(&payload)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<serde_json::Value>()
+            .await?;
+        if response.get("ok").and_then(|value| value.as_bool()) != Some(true) {
+            return Err(format!("Telegram sendMessage xato: {response}").into());
+        }
+        Ok(())
+    }
+
+    fn url(&self, method: &str) -> String {
+        format!("https://api.telegram.org/bot{}/{}", self.token, method)
+    }
+}

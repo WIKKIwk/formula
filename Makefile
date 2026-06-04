@@ -1,4 +1,4 @@
-.PHONY: run demo test fmt check sample sample-tsv sample-xlsx
+.PHONY: run demo test fmt check sample sample-tsv sample-xlsx bot-check bot-run
 
 run:
 	cargo run -- --interactive
@@ -14,6 +14,12 @@ fmt:
 
 check:
 	cargo check
+
+bot-check:
+	cargo check -p formula_bot
+
+bot-run:
+	cargo run -p formula_bot
 
 sample:
 	cargo run -- --file examples/sample.csv
