@@ -171,6 +171,12 @@ Terminalda savol-javob qilib hisoblash:
 cargo run -- --interactive
 ```
 
+Yoki qisqa:
+
+```bash
+make run
+```
+
 Dastur ketma-ket so'raydi:
 
 - `KG`
@@ -338,6 +344,12 @@ Misol natijalar:
 
 ```bash
 cargo test
+```
+
+Yoki:
+
+```bash
+make test
 ```
 
 Testlar quyidagilarni tekshiradi:
