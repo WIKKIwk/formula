@@ -1,5 +1,6 @@
 use crate::calc::calculate_order;
 use crate::config::Config;
+use crate::file_handler::handle_csv_document;
 use crate::formatter::{calc_message, draft_form_message, order_message};
 use crate::material_parser::parse_material_layers;
 use crate::order::OrderDraft;
@@ -52,6 +53,7 @@ impl BotApp {
         let chat_id = message.chat.id;
         let message_id = message.message_id;
         let photo_file_id = largest_photo_file_id(&message.photo);
+        let document = message.document;
         let text = message.text.unwrap_or_default();
         let trimmed = text.trim();
 
@@ -79,6 +81,17 @@ impl BotApp {
             self.telegram
                 .send_message(chat_id, &setup_message(chat_id, self.registry.value()))
                 .await?;
+            return Ok(());
+        }
+
+        if let Some(document) = document {
+            if !self.is_admin_chat(chat_id) {
+                self.telegram
+                    .send_message(chat_id, "CSV fayl faqat admin chatdan qabul qilinadi.")
+                    .await?;
+                return Ok(());
+            }
+            handle_csv_document(&self.telegram, chat_id, &document).await?;
             return Ok(());
         }
 

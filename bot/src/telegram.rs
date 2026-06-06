@@ -1,3 +1,4 @@
+use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +26,7 @@ pub struct Message {
     pub chat: Chat,
     pub text: Option<String>,
     pub photo: Option<Vec<PhotoSize>>,
+    pub document: Option<Document>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +40,12 @@ pub struct PhotoSize {
     pub width: i64,
     pub height: i64,
     pub file_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Document {
+    pub file_id: String,
+    pub file_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +75,11 @@ struct EditMessage<'a> {
 struct DeleteMessage {
     chat_id: i64,
     message_id: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct TelegramFile {
+    file_path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -208,6 +221,72 @@ impl TelegramClient {
             return Ok(());
         }
         Ok(())
+    }
+
+    pub async fn download_file(
+        &self,
+        file_id: &str,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let response = self
+            .client
+            .get(self.url("getFile"))
+            .query(&[("file_id", file_id)])
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram getFile HTTP status: {status}").into());
+        }
+        let response = response.json::<ApiResponse<TelegramFile>>().await?;
+        if !response.ok {
+            return Err("Telegram getFile ok=false".into());
+        }
+
+        let response = self
+            .client
+            .get(format!(
+                "https://api.telegram.org/file/bot{}/{}",
+                self.token, response.result.file_path
+            ))
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram file download HTTP status: {status}").into());
+        }
+        Ok(response.bytes().await?.to_vec())
+    }
+
+    pub async fn send_document(
+        &self,
+        chat_id: i64,
+        filename: &str,
+        bytes: Vec<u8>,
+        caption: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+        let document = Part::bytes(bytes)
+            .file_name(filename.to_string())
+            .mime_str("text/csv")?;
+        let form = Form::new()
+            .text("chat_id", chat_id.to_string())
+            .text("caption", caption.to_string())
+            .part("document", document);
+
+        let response = self
+            .client
+            .post(self.url("sendDocument"))
+            .multipart(form)
+            .send()
+            .await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("Telegram sendDocument HTTP status: {status}").into());
+        }
+        let response = response.json::<ApiResponse<SentMessage>>().await?;
+        if !response.ok {
+            return Err("Telegram sendDocument ok=false".into());
+        }
+        Ok(response.result.message_id)
     }
 
     fn url(&self, method: &str) -> String {

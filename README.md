@@ -361,6 +361,8 @@ Bot login va parol xabarlarini o'chiradi. Prompt xabarini `Login yozing` -> `Par
 
 Buyurtma admin chatda bitta anketa xabarini edit qilib yig'iladi. Admin javoblari o'chiriladi, anketa esa to'ldirib boriladi. Bot quyidagilarni so'raydi: buyurtma raqami, mijoz, mahsulot, holat, material matni, rang, tiraj kg, uzunligi mm, eslatma va rasm. Material matnidan 1/2/3-qavat material va mikronlari avtomatik ajratiladi. Rasm yuborilsa ma'lumot guruhiga caption bilan tushadi, rasm bo'lmasa rasm bosqichida `-` yoziladi.
 
+Admin chatga `.csv` fayl yuborilsa, bot uni hisoblab, yana `.csv` formatda qaytaradi. CSV ichida `KG`, `RAZMER`, `1 QAVAT`, `1 MIKRON`, `2 QAVAT`, `2 MIKRON` ustunlari bo'lishi kerak. Natijaga `HISOBLANGAN_UZUNLIK`, `STATUS`, `XATO` ustunlari qo'shiladi.
+
 ## Demo Qatorlar
 
 Rasmdagi test qatorlarni hisoblatish:
