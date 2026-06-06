@@ -3,8 +3,11 @@ use crate::order::OrderDraft;
 use calamine::{open_workbook_auto, Data, Reader};
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use umya_spreadsheet::{reader, writer};
+
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 pub struct XlsxProcessReport {
@@ -190,11 +193,15 @@ fn parse_decimal(value: &str) -> Result<f64, String> {
 }
 
 fn find_header_row(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)> {
-    rows.iter().take(30).enumerate().find_map(|(index, row)| {
-        find_columns(row)
-            .or_else(|| find_columns(&combined_header_row(rows, index)))
-            .map(|columns| (index, columns))
-    })
+    rows.iter()
+        .take(30)
+        .enumerate()
+        .find_map(|(index, row)| {
+            find_columns(row)
+                .or_else(|| find_columns(&combined_header_row(rows, index)))
+                .map(|columns| (index, columns))
+        })
+        .or_else(|| find_sheet_data_layout(rows))
 }
 
 fn find_columns(row: &[String]) -> Option<ColumnIndexes> {
@@ -228,6 +235,41 @@ fn combined_header_row(rows: &[Vec<String>], index: usize) -> Vec<String> {
 fn find_column(row: &[String], kind: HeaderKind) -> Option<usize> {
     row.iter()
         .position(|cell| header_matches(&normalize_header(cell), kind))
+}
+
+fn find_sheet_data_layout(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)> {
+    let indexes = ColumnIndexes {
+        kg: 5,
+        first_material: 6,
+        second_material: 7,
+        width: 8,
+        first_micron: 9,
+        second_micron: 10,
+    };
+
+    let first_data_row = rows
+        .iter()
+        .take(30)
+        .position(|row| looks_like_sheet_data_row(row, indexes))?;
+    let sample_count = rows
+        .iter()
+        .skip(first_data_row)
+        .take(20)
+        .filter(|row| looks_like_sheet_data_row(row, indexes))
+        .count();
+    if sample_count < 3 || first_data_row == 0 {
+        return None;
+    }
+    Some((first_data_row - 1, indexes))
+}
+
+fn looks_like_sheet_data_row(row: &[String], indexes: ColumnIndexes) -> bool {
+    parse_decimal(get_cell(row, indexes.kg)).is_ok()
+        && parse_decimal(get_cell(row, indexes.width)).is_ok()
+        && !get_cell(row, indexes.first_material).trim().is_empty()
+        && !get_cell(row, indexes.second_material).trim().is_empty()
+        && !get_cell(row, indexes.first_micron).trim().is_empty()
+        && !get_cell(row, indexes.second_micron).trim().is_empty()
 }
 
 #[derive(Clone, Copy)]
@@ -340,14 +382,16 @@ fn trim_float(value: f64) -> String {
 }
 
 fn temp_path(name: &str, extension: &str) -> PathBuf {
-    let millis = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
+        .map(|duration| duration.as_nanos())
         .unwrap_or_default();
+    let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!(
-        "formula_bot_{name}_{}_{}.{}",
+        "formula_bot_{name}_{}_{}_{}.{}",
         std::process::id(),
-        millis,
+        nanos,
+        counter,
         extension
     ))
 }
@@ -409,5 +453,35 @@ mod tests {
 
         let _ = std::fs::remove_file(input_path);
         let _ = std::fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn processes_sheet_without_header_by_data_layout() {
+        let input_path = temp_path("test_no_header_input", "xlsx");
+        let mut book = new_file();
+        let sheet = book.sheet_mut(0).unwrap();
+        sheet.cell_mut("A1").set_value(" ");
+        sheet.cell_mut("B1").set_value("dfa");
+        sheet.cell_mut("C1").set_value("df");
+        sheet.cell_mut("D1").set_value("fdasfda");
+        sheet.cell_mut("F2").set_value("fdsa");
+
+        for (row, kg) in [(4, "300"), (5, "600"), (6, "800")] {
+            sheet.cell_mut((6, row)).set_value(kg);
+            sheet.cell_mut((7, row)).set_value("pet");
+            sheet.cell_mut((8, row)).set_value("pe pr");
+            sheet.cell_mut((9, row)).set_value("530");
+            sheet.cell_mut((10, row)).set_value("12");
+            sheet.cell_mut((11, row)).set_value("30");
+        }
+        writer::xlsx::write(&book, &input_path).unwrap();
+
+        let input = std::fs::read(&input_path).unwrap();
+        let report = process_xlsx(&input).unwrap();
+
+        assert_eq!(report.processed_count, 3);
+        assert_eq!(report.ok_count, 3);
+
+        let _ = std::fs::remove_file(input_path);
     }
 }
