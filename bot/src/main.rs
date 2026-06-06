@@ -10,6 +10,8 @@ mod registry;
 mod state;
 mod telegram;
 mod xlsx_processor;
+#[cfg(test)]
+mod xlsx_processor_tests;
 
 use config::Config;
 use handlers::BotApp;
