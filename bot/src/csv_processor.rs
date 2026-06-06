@@ -21,7 +21,8 @@ struct ColumnIndexes {
 }
 
 pub fn process_csv(input: &[u8]) -> Result<CsvProcessReport, Box<dyn Error>> {
-    let rows = read_csv(input)?;
+    let delimiter = detect_delimiter(input);
+    let rows = read_csv(input, delimiter)?;
     let (header_index, indexes) = find_header_row(&rows)
         .ok_or("kerakli ustunlar topilmadi: KG, RAZMER, 1 QAVAT, 1 MIKRON, 2 QAVAT, 2 MIKRON")?;
     let mut headers = rows[header_index].clone();
@@ -61,7 +62,7 @@ pub fn process_csv(input: &[u8]) -> Result<CsvProcessReport, Box<dyn Error>> {
         output_rows.push(output_row);
     }
 
-    let output = write_csv(&headers, &output_rows)?;
+    let output = write_csv(&headers, &output_rows, delimiter)?;
     Ok(CsvProcessReport {
         output,
         processed_count: ok_count + error_count,
@@ -70,9 +71,10 @@ pub fn process_csv(input: &[u8]) -> Result<CsvProcessReport, Box<dyn Error>> {
     })
 }
 
-fn read_csv(input: &[u8]) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
+fn read_csv(input: &[u8], delimiter: u8) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
+        .delimiter(delimiter)
         .flexible(true)
         .from_reader(input);
     let mut rows = Vec::new();
@@ -82,13 +84,40 @@ fn read_csv(input: &[u8]) -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     Ok(rows)
 }
 
-fn write_csv(headers: &[String], rows: &[Vec<String>]) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut writer = csv::WriterBuilder::new().from_writer(Vec::new());
+fn write_csv(
+    headers: &[String],
+    rows: &[Vec<String>],
+    delimiter: u8,
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut writer = csv::WriterBuilder::new()
+        .delimiter(delimiter)
+        .from_writer(Vec::new());
     writer.write_record(headers)?;
     for row in rows {
         writer.write_record(row)?;
     }
     Ok(writer.into_inner()?)
+}
+
+fn detect_delimiter(input: &[u8]) -> u8 {
+    let sample = String::from_utf8_lossy(input);
+    let mut best = (b',', 0usize);
+    for delimiter in [b',', b';', b'\t'] {
+        let count = sample
+            .lines()
+            .take(10)
+            .map(|line| {
+                line.as_bytes()
+                    .iter()
+                    .filter(|byte| **byte == delimiter)
+                    .count()
+            })
+            .sum();
+        if count > best.1 {
+            best = (delimiter, count);
+        }
+    }
+    best.0
 }
 
 fn calculate_csv_row(row: &[String], indexes: ColumnIndexes) -> Result<f64, String> {
@@ -172,7 +201,7 @@ enum HeaderKind {
 }
 
 fn normalize_header(value: &str) -> String {
-    value
+    transliterate_header(value)
         .trim()
         .to_lowercase()
         .chars()
@@ -180,10 +209,54 @@ fn normalize_header(value: &str) -> String {
         .collect()
 }
 
+fn transliterate_header(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|ch| match ch {
+            'А' | 'а' => "a".chars().collect::<Vec<_>>(),
+            'Б' | 'б' => "b".chars().collect(),
+            'В' | 'в' => "v".chars().collect(),
+            'Г' | 'г' => "g".chars().collect(),
+            'Д' | 'д' => "d".chars().collect(),
+            'Е' | 'е' | 'Ё' | 'ё' | 'Э' | 'э' => "e".chars().collect(),
+            'Ж' | 'ж' => "j".chars().collect(),
+            'З' | 'з' => "z".chars().collect(),
+            'И' | 'и' | 'Й' | 'й' => "i".chars().collect(),
+            'К' | 'к' => "k".chars().collect(),
+            'Л' | 'л' => "l".chars().collect(),
+            'М' | 'м' => "m".chars().collect(),
+            'Н' | 'н' => "n".chars().collect(),
+            'О' | 'о' => "o".chars().collect(),
+            'П' | 'п' => "p".chars().collect(),
+            'Р' | 'р' => "r".chars().collect(),
+            'С' | 'с' => "s".chars().collect(),
+            'Т' | 'т' => "t".chars().collect(),
+            'У' | 'у' => "u".chars().collect(),
+            'Ф' | 'ф' => "f".chars().collect(),
+            'Х' | 'х' => "x".chars().collect(),
+            'Ц' | 'ц' => "ts".chars().collect(),
+            'Ч' | 'ч' => "ch".chars().collect(),
+            'Ш' | 'ш' => "sh".chars().collect(),
+            'Щ' | 'щ' => "sh".chars().collect(),
+            'Ы' | 'ы' => "i".chars().collect(),
+            'Ю' | 'ю' => "yu".chars().collect(),
+            'Я' | 'я' => "ya".chars().collect(),
+            'Қ' | 'қ' => "q".chars().collect(),
+            'Ғ' | 'ғ' => "g".chars().collect(),
+            'Ў' | 'ў' => "o".chars().collect(),
+            'Ҳ' | 'ҳ' => "h".chars().collect(),
+            _ => vec![ch],
+        })
+        .collect()
+}
+
 fn header_matches(header: &str, kind: HeaderKind) -> bool {
     match kind {
-        HeaderKind::Kg => matches!(header, "kg" | "kilo" | "ogirlik" | "weight"),
-        HeaderKind::Width => matches!(header, "razmer" | "razmr" | "olcham" | "size" | "uzunligi"),
+        HeaderKind::Kg => matches!(header, "kg" | "kilo" | "ogirlik" | "ves" | "weight"),
+        HeaderKind::Width => matches!(
+            header,
+            "razmer" | "razmr" | "olcham" | "size" | "uzunligi" | "dlina"
+        ),
         HeaderKind::FirstMaterial => {
             matches!(
                 header,
@@ -226,5 +299,26 @@ mod tests {
         assert_eq!(report.processed_count, 1);
         assert_eq!(report.ok_count, 1);
         assert_eq!(report.error_count, 0);
+    }
+
+    #[test]
+    fn processes_semicolon_csv() {
+        let input = b"KG;RAZMER;1 QAVAT;1 MIKRON;2 QAVAT;2 MIKRON\n300;530;pet;12;pe pr;30\n";
+        let report = process_csv(input).unwrap();
+        let output = String::from_utf8(report.output).unwrap();
+
+        assert!(output.contains("HISOBLANGAN_UZUNLIK;STATUS;XATO"));
+        assert!(output.contains("12000;OK;"));
+        assert_eq!(report.processed_count, 1);
+    }
+
+    #[test]
+    fn processes_cyrillic_headers() {
+        let input = "КГ;РАЗМЕР;1 ҚАВАТ;1 МИКРОН;2 ҚАВАТ;2 МИКРОН\n300;530;pet;12;pe pr;30\n";
+        let report = process_csv(input.as_bytes()).unwrap();
+        let output = String::from_utf8(report.output).unwrap();
+
+        assert!(output.contains("12000;OK;"));
+        assert_eq!(report.processed_count, 1);
     }
 }
