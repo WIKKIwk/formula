@@ -88,9 +88,18 @@ fn calculate_single_order(order: &OrderDraft) -> Result<CalcResult, String> {
 }
 
 fn order_variants(order: &OrderDraft) -> Vec<OrderDraft> {
-    let first_materials = alternatives(order.first_material.as_deref());
-    let second_materials = alternatives(order.second_material.as_deref());
-    let third_materials = alternatives(order.third_material.as_deref());
+    let first_materials = alternatives(
+        order.first_material.as_deref(),
+        order.first_micron.as_deref(),
+    );
+    let second_materials = alternatives(
+        order.second_material.as_deref(),
+        order.second_micron.as_deref(),
+    );
+    let third_materials = alternatives(
+        order.third_material.as_deref(),
+        order.third_micron.as_deref(),
+    );
     let mut variants = Vec::new();
 
     for first_material in &first_materials {
@@ -107,7 +116,7 @@ fn order_variants(order: &OrderDraft) -> Vec<OrderDraft> {
     variants
 }
 
-fn alternatives(value: Option<&str>) -> Vec<Option<String>> {
+fn alternatives(value: Option<&str>, micron_text: Option<&str>) -> Vec<Option<String>> {
     let Some(value) = value else {
         return vec![None];
     };
@@ -115,6 +124,7 @@ fn alternatives(value: Option<&str>) -> Vec<Option<String>> {
         .split("yoki")
         .map(str::trim)
         .filter(|part| !part.is_empty())
+        .flat_map(|part| slash_alternatives(part, micron_text))
         .map(|part| Some(part.to_string()))
         .collect::<Vec<_>>();
     if parts.is_empty() {
@@ -122,6 +132,20 @@ fn alternatives(value: Option<&str>) -> Vec<Option<String>> {
     } else {
         parts
     }
+}
+
+fn slash_alternatives<'a>(value: &'a str, micron_text: Option<&str>) -> Vec<&'a str> {
+    let parts = split_parts(value);
+    if parts.len() <= 1 || slash_matches_microns(parts.len(), micron_text) {
+        return vec![value];
+    }
+    parts
+}
+
+fn slash_matches_microns(material_count: usize, micron_text: Option<&str>) -> bool {
+    micron_text
+        .and_then(|micron_text| parse_micron_parts(micron_text).ok())
+        .is_some_and(|microns| microns.len() == material_count)
 }
 
 fn merge_layers(
@@ -439,17 +463,34 @@ mod tests {
 
     #[test]
     fn calculates_alternative_materials() {
-        let order = OrderDraft {
-            kg: Some(300.0),
-            width_mm: Some(530.0),
-            first_material: Some("pet".to_string()),
-            first_micron: Some("12".to_string()),
-            second_material: Some("pe oq yoki mcp".to_string()),
-            second_micron: Some("30".to_string()),
-            ..OrderDraft::default()
-        };
-
+        let order = test_order(300.0, 530.0, "pe oq yoki mcp", "30");
         let lengths = calculate_order_lengths(&order).unwrap();
         assert_eq!(lengths, vec![12000.0, 14000.0]);
+    }
+
+    #[test]
+    fn calculates_slash_materials_as_alternatives_with_single_micron() {
+        let order = test_order(300.0, 530.0, "pe oq/mcp", "30");
+        let lengths = calculate_order_lengths(&order).unwrap();
+        assert_eq!(lengths, vec![12000.0, 14000.0]);
+    }
+
+    #[test]
+    fn keeps_slash_layers_when_microns_are_split_too() {
+        let order = test_order(3000.0, 635.0, "oppm/pe pr", "20/30");
+        let lengths = calculate_order_lengths(&order).unwrap();
+        assert_eq!(lengths, vec![74500.0]);
+    }
+
+    fn test_order(kg: f64, w: f64, q2: &str, m2: &str) -> OrderDraft {
+        OrderDraft {
+            kg: Some(kg),
+            width_mm: Some(w),
+            first_material: Some("pet".to_string()),
+            first_micron: Some("12".to_string()),
+            second_material: Some(q2.to_string()),
+            second_micron: Some(m2.to_string()),
+            ..OrderDraft::default()
+        }
     }
 }
