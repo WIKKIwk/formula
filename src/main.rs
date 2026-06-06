@@ -1095,6 +1095,19 @@ fn pe_coefficient(micron: u32) -> Option<f64> {
 }
 
 fn interpolate(micron: u32, table: &[(u32, f64)]) -> Option<f64> {
+    let [(first_micron, first_value), (second_micron, second_value), ..] = table else {
+        return None;
+    };
+    if micron < *first_micron {
+        return Some(project(
+            micron,
+            *first_micron,
+            *first_value,
+            *second_micron,
+            *second_value,
+        ));
+    }
+
     for window in table.windows(2) {
         let (left_micron, left_value) = window[0];
         let (right_micron, right_value) = window[1];
@@ -1106,9 +1119,26 @@ fn interpolate(micron: u32, table: &[(u32, f64)]) -> Option<f64> {
             return Some(left_value + (right_value - left_value) * ratio);
         }
     }
-    table
-        .last()
-        .and_then(|(table_micron, value)| (*table_micron == micron).then_some(*value))
+    let (left_micron, left_value) = table[table.len() - 2];
+    let (right_micron, right_value) = table[table.len() - 1];
+    Some(project(
+        micron,
+        left_micron,
+        left_value,
+        right_micron,
+        right_value,
+    ))
+}
+
+fn project(
+    micron: u32,
+    left_micron: u32,
+    left_value: f64,
+    right_micron: u32,
+    right_value: f64,
+) -> f64 {
+    let ratio = (micron as f64 - left_micron as f64) / (right_micron - left_micron) as f64;
+    left_value + (right_value - left_value) * ratio
 }
 
 fn round_up(value: f64, step: f64) -> f64 {
@@ -1452,6 +1482,8 @@ mod tests {
         assert_eq!(coefficient_single("cpp", 55, false).unwrap(), 3.0);
         let mcp_23 = coefficient_single("mcp", 23, false).unwrap();
         assert!((mcp_23 - 1.208).abs() < 0.001);
+        let pe_100 = coefficient_single("pe pr", 100, false).unwrap();
+        assert!((pe_100 - 6.8).abs() < 0.001);
     }
 
     #[test]
