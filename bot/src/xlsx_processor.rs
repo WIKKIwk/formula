@@ -141,6 +141,10 @@ fn write_xlsx_results(
 }
 
 fn next_result_column(rows: &[Vec<String>]) -> u32 {
+    if let Some(index) = find_existing_result_column(rows) {
+        return index as u32 + 1;
+    }
+
     rows.iter()
         .flat_map(|row| {
             row.iter()
@@ -151,6 +155,18 @@ fn next_result_column(rows: &[Vec<String>]) -> u32 {
         .max()
         .map(|index| index as u32 + 2)
         .unwrap_or(1)
+}
+
+fn find_existing_result_column(rows: &[Vec<String>]) -> Option<usize> {
+    rows.iter().take(20).find_map(|row| {
+        row.iter().position(|cell| {
+            let normalized = normalize_header(cell);
+            matches!(
+                normalized.as_str(),
+                "hisoblanganuzunlik" | "hisoblanganuz" | "uzunlik" | "natija"
+            )
+        })
+    })
 }
 
 fn copy_result_styles(
@@ -353,7 +369,14 @@ fn header_matches(header: &str, kind: HeaderKind) -> bool {
         }
         HeaderKind::Width => matches!(
             header,
-            "razmer" | "razmr" | "olcham" | "size" | "uzunligi" | "dlina" | "materialrazmeri"
+            "razmer"
+                | "razmeri"
+                | "razmr"
+                | "olcham"
+                | "size"
+                | "uzunligi"
+                | "dlina"
+                | "materialrazmeri"
         ),
         HeaderKind::FirstMaterial => matches!(
             header,

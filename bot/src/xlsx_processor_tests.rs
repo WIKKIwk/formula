@@ -93,6 +93,43 @@ fn processes_sheet_without_header_by_data_layout() {
     let _ = std::fs::remove_file(input_path);
 }
 
+#[test]
+fn fills_existing_result_columns() {
+    let input_path = temp_path("test_existing_result_cols", "xlsx");
+    let mut book = new_file();
+    let sheet = book.sheet_mut(0).unwrap();
+    sheet.cell_mut("A1").set_value("sana");
+    sheet.cell_mut("F1").set_value("kg");
+    sheet.cell_mut("G1").set_value("1 - qavati");
+    sheet.cell_mut("H1").set_value("2 - qavati");
+    sheet.cell_mut("I1").set_value("razmeri");
+    sheet.cell_mut("J1").set_value("1 - micron");
+    sheet.cell_mut("K1").set_value("2 - micron");
+    sheet.cell_mut("O1").set_value("HISOBLANGAN_UZUNLIK");
+    sheet.cell_mut("P1").set_value("STATUS");
+    sheet.cell_mut("F2").set_value("300");
+    sheet.cell_mut("G2").set_value("pet");
+    sheet.cell_mut("H2").set_value("pe pr");
+    sheet.cell_mut("I2").set_value("530");
+    sheet.cell_mut("J2").set_value("12");
+    sheet.cell_mut("K2").set_value("30");
+    writer::xlsx::write(&book, &input_path).unwrap();
+
+    let input = std::fs::read(&input_path).unwrap();
+    let report = process_xlsx(&input).unwrap();
+    let output_path = temp_path("test_existing_result_output", "xlsx");
+    std::fs::write(&output_path, &report.output).unwrap();
+
+    let mut workbook = open_workbook_auto(&output_path).unwrap();
+    let range = workbook.worksheet_range_at(0).unwrap().unwrap();
+    assert_eq!(range.get((1, 14)).unwrap().to_string(), "12000");
+    assert_eq!(range.get((1, 15)).unwrap().to_string(), "OK");
+    assert_eq!(range.get((0, 16)).unwrap().to_string(), "XATO");
+
+    let _ = std::fs::remove_file(input_path);
+    let _ = std::fs::remove_file(output_path);
+}
+
 fn temp_path(name: &str, extension: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
