@@ -262,11 +262,12 @@ impl TelegramClient {
         chat_id: i64,
         filename: &str,
         bytes: Vec<u8>,
+        mime_type: &str,
         caption: &str,
     ) -> Result<i64, Box<dyn std::error::Error>> {
         let document = Part::bytes(bytes)
             .file_name(filename.to_string())
-            .mime_str("text/csv")?;
+            .mime_str(mime_type)?;
         let form = Form::new()
             .text("chat_id", chat_id.to_string())
             .text("caption", caption.to_string())

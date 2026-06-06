@@ -372,12 +372,14 @@ dependencies = [
 name = "formula_bot"
 version = "0.1.0"
 dependencies = [
+ "calamine",
  "chrono",
  "csv",
  "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "umya-spreadsheet",
 ]
 
 [[package]]

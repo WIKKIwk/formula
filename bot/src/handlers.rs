@@ -1,6 +1,6 @@
 use crate::calc::calculate_order;
 use crate::config::Config;
-use crate::file_handler::handle_csv_document;
+use crate::file_handler::handle_file_document;
 use crate::formatter::{calc_message, draft_form_message, order_message};
 use crate::material_parser::parse_material_layers;
 use crate::order::OrderDraft;
@@ -91,7 +91,7 @@ impl BotApp {
                     .await?;
                 return Ok(());
             }
-            handle_csv_document(&self.telegram, chat_id, &document).await?;
+            handle_file_document(&self.telegram, chat_id, &document).await?;
             return Ok(());
         }
 
