@@ -1,4 +1,4 @@
-use crate::calc::calculate_order;
+use crate::calc::calculate_order_lengths;
 use crate::order::OrderDraft;
 use std::error::Error;
 
@@ -47,7 +47,7 @@ pub fn process_csv(input: &[u8]) -> Result<CsvProcessReport, Box<dyn Error>> {
         match calculate_csv_row(row, indexes) {
             Ok(length) => {
                 ok_count += 1;
-                output_row.push(format!("{length:.0}"));
+                output_row.push(length);
                 output_row.push("OK".to_string());
                 output_row.push(String::new());
             }
@@ -120,7 +120,7 @@ fn detect_delimiter(input: &[u8]) -> u8 {
     best.0
 }
 
-fn calculate_csv_row(row: &[String], indexes: ColumnIndexes) -> Result<f64, String> {
+fn calculate_csv_row(row: &[String], indexes: ColumnIndexes) -> Result<String, String> {
     let q1 = get_cell(row, indexes.first_material);
     let m1 = get_cell(row, indexes.first_micron);
     let q2 = get_cell(row, indexes.second_material);
@@ -136,7 +136,15 @@ fn calculate_csv_row(row: &[String], indexes: ColumnIndexes) -> Result<f64, Stri
         ..OrderDraft::default()
     };
 
-    calculate_order(&order).map(|result| result.rounded_length)
+    calculate_order_lengths(&order).map(format_lengths)
+}
+
+fn format_lengths(lengths: Vec<f64>) -> String {
+    lengths
+        .into_iter()
+        .map(|length| format!("{length:.0}"))
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn get_cell(row: &[String], index: usize) -> &str {
@@ -358,5 +366,16 @@ mod tests {
         assert_eq!(report.processed_count, 2);
         assert_eq!(report.ok_count, 2);
         assert!(output.contains(",OK,"));
+    }
+
+    #[test]
+    fn writes_alternative_lengths_with_slash() {
+        let input =
+            b"KG,RAZMER,1 QAVAT,1 MIKRON,2 QAVAT,2 MIKRON\n300,530,pet,12,pe oq yoki mcp,30\n";
+        let report = process_csv(input).unwrap();
+        let output = String::from_utf8(report.output).unwrap();
+
+        assert!(output.contains("12000/14000,OK,"));
+        assert_eq!(report.ok_count, 1);
     }
 }

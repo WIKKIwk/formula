@@ -12,6 +12,30 @@ pub struct CalcResult {
 }
 
 pub fn calculate_order(order: &OrderDraft) -> Result<CalcResult, String> {
+    calculate_order_variants(order)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "hisob varianti topilmadi".to_string())
+}
+
+pub fn calculate_order_lengths(order: &OrderDraft) -> Result<Vec<f64>, String> {
+    calculate_order_variants(order).map(|results| {
+        results
+            .into_iter()
+            .map(|result| result.rounded_length)
+            .collect()
+    })
+}
+
+fn calculate_order_variants(order: &OrderDraft) -> Result<Vec<CalcResult>, String> {
+    let mut results = Vec::new();
+    for order in order_variants(order) {
+        results.push(calculate_single_order(&order)?);
+    }
+    Ok(results)
+}
+
+fn calculate_single_order(order: &OrderDraft) -> Result<CalcResult, String> {
     let kg = OrderDraft::require_number(order.kg, "KG")?;
     let width_mm = OrderDraft::require_number(order.width_mm, "RAZMER")?;
     let q1 = OrderDraft::require_text(&order.first_material, "1-qavat")?;
@@ -63,6 +87,43 @@ pub fn calculate_order(order: &OrderDraft) -> Result<CalcResult, String> {
     })
 }
 
+fn order_variants(order: &OrderDraft) -> Vec<OrderDraft> {
+    let first_materials = alternatives(order.first_material.as_deref());
+    let second_materials = alternatives(order.second_material.as_deref());
+    let third_materials = alternatives(order.third_material.as_deref());
+    let mut variants = Vec::new();
+
+    for first_material in &first_materials {
+        for second_material in &second_materials {
+            for third_material in &third_materials {
+                let mut variant = order.clone();
+                variant.first_material = first_material.clone();
+                variant.second_material = second_material.clone();
+                variant.third_material = third_material.clone();
+                variants.push(variant);
+            }
+        }
+    }
+    variants
+}
+
+fn alternatives(value: Option<&str>) -> Vec<Option<String>> {
+    let Some(value) = value else {
+        return vec![None];
+    };
+    let parts = value
+        .split("yoki")
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| Some(part.to_string()))
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        vec![Some(value.to_string())]
+    } else {
+        parts
+    }
+}
+
 fn merge_layers(
     q2: String,
     m2: String,
@@ -109,14 +170,10 @@ fn coefficient_cell(
 
 fn coefficient_single(material: &str, micron: u32, is_first: bool) -> Result<f64, String> {
     let family = material_family(material)?;
-    let normalized = normalize(material);
     if is_first && !matches!(family, Family::Empty | Family::Twist) && micron <= 20 {
         return Ok(1.0);
     }
-    if family == Family::First
-        && (normalized.starts_with("pet") || normalized.starts_with("mpet"))
-        && micron <= 20
-    {
+    if family == Family::First && micron <= 20 {
         return Ok(1.0);
     }
 
@@ -145,19 +202,19 @@ fn material_family(material: &str) -> Result<Family, String> {
     if n.is_empty() || matches!(n.as_str(), "--" | "-" | "yoq" | "yuq") {
         return Ok(Family::Empty);
     }
-    if n.starts_with("twist") || n.starts_with("tuisim") || n.starts_with("twism") {
+    if n.starts_with("twis") || n.starts_with("tuisim") {
         return Ok(Family::Twist);
     }
     if n.starts_with("pet") || n.starts_with("mpet") || close(&n, "pet") {
         return Ok(Family::First);
     }
-    if n.starts_with("opp") || n.starts_with("popp") || close(&n, "opp") {
+    if n.starts_with("opp") || n.starts_with("popp") || n == "st01" || close(&n, "opp") {
         return Ok(Family::First);
     }
     if matches!(n.as_str(), "map" | "mcpp" | "msr" | "msp") {
         return Ok(Family::McpCpp);
     }
-    if n.starts_with("mat") || n.starts_with("pff") || close(&n, "mat") {
+    if n.starts_with("mat") || n.starts_with("pff") || n.starts_with("pf") || close(&n, "mat") {
         return Ok(Family::First);
     }
     if n.starts_with("pe") || close(&n, "pe") {
@@ -173,44 +230,61 @@ fn material_family(material: &str) -> Result<Family, String> {
 }
 
 fn mcp_cpp(micron: u32) -> Option<f64> {
-    match micron {
-        20 => Some(1.07),
-        25 => Some(1.3),
-        30 => Some(1.6),
-        35 => Some(2.0),
-        40 => Some(2.15),
-        45 => Some(2.7),
-        50 => Some(2.8),
-        60 => Some(3.2),
-        _ => None,
-    }
+    interpolate(
+        micron,
+        &[
+            (20, 1.07),
+            (25, 1.3),
+            (30, 1.6),
+            (35, 2.0),
+            (40, 2.15),
+            (45, 2.7),
+            (50, 2.8),
+            (60, 3.2),
+        ],
+    )
 }
 
 fn jem(micron: u32) -> Option<f64> {
-    match micron {
-        25 => Some(1.0),
-        30 => Some(1.5),
-        _ => None,
-    }
+    interpolate(micron, &[(25, 1.0), (30, 1.5)])
 }
 
 fn pe(micron: u32) -> Option<f64> {
-    match micron {
-        30 => Some(2.0),
-        35 => Some(2.3),
-        40 => Some(2.6),
-        45 => Some(3.0),
-        50 => Some(3.3),
-        55 => Some(3.6),
-        60 => Some(4.0),
-        65 => Some(4.3),
-        70 => Some(4.6),
-        75 => Some(5.0),
-        80 => Some(5.3),
-        85 => Some(5.6),
-        90 => Some(6.0),
-        _ => None,
+    interpolate(
+        micron,
+        &[
+            (30, 2.0),
+            (35, 2.3),
+            (40, 2.6),
+            (45, 3.0),
+            (50, 3.3),
+            (55, 3.6),
+            (60, 4.0),
+            (65, 4.3),
+            (70, 4.6),
+            (75, 5.0),
+            (80, 5.3),
+            (85, 5.6),
+            (90, 6.0),
+        ],
+    )
+}
+
+fn interpolate(micron: u32, table: &[(u32, f64)]) -> Option<f64> {
+    for window in table.windows(2) {
+        let (left_micron, left_value) = window[0];
+        let (right_micron, right_value) = window[1];
+        if micron == left_micron {
+            return Some(left_value);
+        }
+        if micron > left_micron && micron < right_micron {
+            let ratio = (micron - left_micron) as f64 / (right_micron - left_micron) as f64;
+            return Some(left_value + (right_value - left_value) * ratio);
+        }
     }
+    table
+        .last()
+        .and_then(|(table_micron, value)| (*table_micron == micron).then_some(*value))
 }
 
 fn parse_micron(value: &str) -> Result<u32, String> {
@@ -296,7 +370,7 @@ fn round_up(value: f64, step: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::calculate_order;
+    use super::{calculate_order, calculate_order_lengths, coefficient_single};
     use crate::order::OrderDraft;
 
     #[test]
@@ -312,5 +386,37 @@ mod tests {
         };
 
         assert_eq!(calculate_order(&order).unwrap().rounded_length, 3000.0);
+    }
+
+    #[test]
+    fn accepts_new_material_aliases_and_low_microns() {
+        assert_eq!(coefficient_single("st01", 18, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("opp", 18, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("pf", 18, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("oppm", 12, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("twisjem", 40, false).unwrap(), 2.0);
+    }
+
+    #[test]
+    fn interpolates_missing_microns_inside_table() {
+        assert_eq!(coefficient_single("cpp", 55, false).unwrap(), 3.0);
+        let mcp_23 = coefficient_single("mcp", 23, false).unwrap();
+        assert!((mcp_23 - 1.208).abs() < 0.001);
+    }
+
+    #[test]
+    fn calculates_alternative_materials() {
+        let order = OrderDraft {
+            kg: Some(300.0),
+            width_mm: Some(530.0),
+            first_material: Some("pet".to_string()),
+            first_micron: Some("12".to_string()),
+            second_material: Some("pe oq yoki mcp".to_string()),
+            second_micron: Some("30".to_string()),
+            ..OrderDraft::default()
+        };
+
+        let lengths = calculate_order_lengths(&order).unwrap();
+        assert_eq!(lengths, vec![12000.0, 14000.0]);
     }
 }

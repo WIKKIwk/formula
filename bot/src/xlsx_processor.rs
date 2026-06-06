@@ -1,4 +1,4 @@
-use crate::calc::calculate_order;
+use crate::calc::calculate_order_lengths;
 use crate::order::OrderDraft;
 use calamine::{open_workbook_auto, Data, Reader};
 use std::error::Error;
@@ -30,7 +30,7 @@ struct ColumnIndexes {
 #[derive(Debug)]
 struct RowResult {
     row_index: usize,
-    value: Result<f64, String>,
+    value: Result<String, String>,
 }
 
 pub fn process_xlsx(input: &[u8]) -> Result<XlsxProcessReport, Box<dyn Error>> {
@@ -119,7 +119,7 @@ fn write_xlsx_results(
             Ok(length) => {
                 worksheet
                     .cell_mut((start_column, excel_row))
-                    .set_value(format!("{length:.0}"));
+                    .set_value(length);
                 worksheet
                     .cell_mut((start_column + 1, excel_row))
                     .set_value("OK");
@@ -186,7 +186,7 @@ fn copy_result_styles(
     }
 }
 
-fn calculate_xlsx_row(row: &[String], indexes: ColumnIndexes) -> Result<f64, String> {
+fn calculate_xlsx_row(row: &[String], indexes: ColumnIndexes) -> Result<String, String> {
     let order = OrderDraft {
         kg: Some(parse_decimal(get_cell(row, indexes.kg))?),
         width_mm: Some(parse_decimal(get_cell(row, indexes.width))?),
@@ -196,7 +196,15 @@ fn calculate_xlsx_row(row: &[String], indexes: ColumnIndexes) -> Result<f64, Str
         second_micron: optional_cell(get_cell(row, indexes.second_micron)),
         ..OrderDraft::default()
     };
-    calculate_order(&order).map(|result| result.rounded_length)
+    calculate_order_lengths(&order).map(format_lengths)
+}
+
+fn format_lengths(lengths: Vec<f64>) -> String {
+    lengths
+        .into_iter()
+        .map(|length| format!("{length:.0}"))
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn get_cell(row: &[String], index: usize) -> &str {

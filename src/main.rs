@@ -408,7 +408,6 @@ fn coefficient_cell(layer: &Layer<'_>, is_first_layer: bool) -> Result<f64, Stri
 
 fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Result<f64, String> {
     let family = material_family(material)?;
-    let normalized = normalize_token(material);
 
     if is_first_layer
         && !matches!(family, MaterialFamily::Empty | MaterialFamily::Twist)
@@ -416,10 +415,7 @@ fn coefficient_single(material: &str, micron: u32, is_first_layer: bool) -> Resu
     {
         return Ok(1.0);
     }
-    if family == MaterialFamily::FirstLayer
-        && (normalized.starts_with("pet") || normalized.starts_with("mpet"))
-        && micron <= 20
-    {
+    if family == MaterialFamily::FirstLayer && micron <= 20 {
         return Ok(1.0);
     }
 
@@ -443,9 +439,8 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
     if matches!(normalized.as_str(), "-" | "yoq" | "yuq" | "none" | "null") {
         return Ok(MaterialFamily::Empty);
     }
-    if normalized.starts_with("twist")
+    if normalized.starts_with("twis")
         || normalized.starts_with("tuisim")
-        || normalized.starts_with("twism")
         || normalized.starts_with("tuism")
         || normalized.starts_with("tvis")
     {
@@ -459,6 +454,7 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
     }
     if normalized.starts_with("opp")
         || normalized.starts_with("popp")
+        || normalized == "st01"
         || is_close_material(&normalized, "opp")
         || is_close_material(&normalized, "popp")
     {
@@ -469,6 +465,7 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
     }
     if normalized.starts_with("mat")
         || normalized.starts_with("pff")
+        || normalized.starts_with("pf")
         || is_close_material(&normalized, "mat")
     {
         return Ok(MaterialFamily::FirstLayer);
@@ -1042,17 +1039,19 @@ fn write_report_delimited(
 }
 
 fn mcp_cpp_coefficient(micron: u32) -> Option<f64> {
-    match micron {
-        20 => Some(1.07),
-        25 => Some(1.3),
-        30 => Some(1.6),
-        35 => Some(2.0),
-        40 => Some(2.15),
-        45 => Some(2.7),
-        50 => Some(2.8),
-        60 => Some(3.2),
-        _ => None,
-    }
+    interpolate(
+        micron,
+        &[
+            (20, 1.07),
+            (25, 1.3),
+            (30, 1.6),
+            (35, 2.0),
+            (40, 2.15),
+            (45, 2.7),
+            (50, 2.8),
+            (60, 3.2),
+        ],
+    )
 }
 
 fn coefficient_error(material: &str, micron: u32, family: MaterialFamily) -> String {
@@ -1071,30 +1070,45 @@ fn coefficient_error(material: &str, micron: u32, family: MaterialFamily) -> Str
 }
 
 fn jem_coefficient(micron: u32) -> Option<f64> {
-    match micron {
-        25 => Some(1.0),
-        30 => Some(1.5),
-        _ => None,
-    }
+    interpolate(micron, &[(25, 1.0), (30, 1.5)])
 }
 
 fn pe_coefficient(micron: u32) -> Option<f64> {
-    match micron {
-        30 => Some(2.0),
-        35 => Some(2.3),
-        40 => Some(2.6),
-        45 => Some(3.0),
-        50 => Some(3.3),
-        55 => Some(3.6),
-        60 => Some(4.0),
-        65 => Some(4.3),
-        70 => Some(4.6),
-        75 => Some(5.0),
-        80 => Some(5.3),
-        85 => Some(5.6),
-        90 => Some(6.0),
-        _ => None,
+    interpolate(
+        micron,
+        &[
+            (30, 2.0),
+            (35, 2.3),
+            (40, 2.6),
+            (45, 3.0),
+            (50, 3.3),
+            (55, 3.6),
+            (60, 4.0),
+            (65, 4.3),
+            (70, 4.6),
+            (75, 5.0),
+            (80, 5.3),
+            (85, 5.6),
+            (90, 6.0),
+        ],
+    )
+}
+
+fn interpolate(micron: u32, table: &[(u32, f64)]) -> Option<f64> {
+    for window in table.windows(2) {
+        let (left_micron, left_value) = window[0];
+        let (right_micron, right_value) = window[1];
+        if micron == left_micron {
+            return Some(left_value);
+        }
+        if micron > left_micron && micron < right_micron {
+            let ratio = (micron - left_micron) as f64 / (right_micron - left_micron) as f64;
+            return Some(left_value + (right_value - left_value) * ratio);
+        }
     }
+    table
+        .last()
+        .and_then(|(table_micron, value)| (*table_micron == micron).then_some(*value))
 }
 
 fn round_up(value: f64, step: f64) -> f64 {
@@ -1377,8 +1391,8 @@ mod tests {
         let result = calculate(&calculation).unwrap();
 
         assert_eq!(result.first_coeff, 1.0);
-        assert_eq!(result.second_coeff, 3.0700000000000003);
-        assert_eq!(result.rounded_length, 73500.0);
+        assert_eq!(result.second_coeff, 3.0);
+        assert_eq!(result.rounded_length, 74500.0);
     }
 
     #[test]
@@ -1426,6 +1440,18 @@ mod tests {
     fn maps_petm_and_mpet_12_to_one() {
         assert_eq!(coefficient_single("petm", 12, false).unwrap(), 1.0);
         assert_eq!(coefficient_single("mpet", 12, false).unwrap(), 1.0);
+    }
+
+    #[test]
+    fn accepts_new_formula_aliases_and_interpolates() {
+        assert_eq!(material_family("st01").unwrap(), MaterialFamily::FirstLayer);
+        assert_eq!(material_family("twisjem").unwrap(), MaterialFamily::Twist);
+        assert_eq!(material_family("pf").unwrap(), MaterialFamily::FirstLayer);
+        assert_eq!(coefficient_single("opp", 18, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("oppm", 12, false).unwrap(), 1.0);
+        assert_eq!(coefficient_single("cpp", 55, false).unwrap(), 3.0);
+        let mcp_23 = coefficient_single("mcp", 23, false).unwrap();
+        assert!((mcp_23 - 1.208).abs() < 0.001);
     }
 
     #[test]
