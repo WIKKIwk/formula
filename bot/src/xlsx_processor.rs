@@ -95,6 +95,7 @@ fn write_xlsx_results(
     let mut book = reader::xlsx::read(input)?;
     let worksheet = book.sheet_mut(0)?;
     let start_column = worksheet.highest_column() + 1;
+    let style_source_column = start_column.saturating_sub(1).max(1);
     let header_row = header_index as u32 + 1;
 
     worksheet
@@ -106,6 +107,7 @@ fn write_xlsx_results(
     worksheet
         .cell_mut((start_column + 2, header_row))
         .set_value("XATO");
+    copy_result_styles(worksheet, style_source_column, header_row, start_column);
 
     for row_result in results {
         let excel_row = row_result.row_index as u32 + 1;
@@ -127,10 +129,23 @@ fn write_xlsx_results(
                     .set_value(message);
             }
         }
+        copy_result_styles(worksheet, style_source_column, excel_row, start_column);
     }
 
     writer::xlsx::write(&book, output)?;
     Ok(())
+}
+
+fn copy_result_styles(
+    worksheet: &mut umya_spreadsheet::Worksheet,
+    source_column: u32,
+    row: u32,
+    start_column: u32,
+) {
+    let style = worksheet.style((source_column, row)).clone();
+    for column in start_column..=start_column + 2 {
+        worksheet.set_style((column, row), style.clone());
+    }
 }
 
 fn calculate_xlsx_row(row: &[String], indexes: ColumnIndexes) -> Result<f64, String> {
@@ -341,7 +356,7 @@ fn temp_path(name: &str, extension: &str) -> PathBuf {
 mod tests {
     use super::{process_xlsx, temp_path};
     use calamine::{open_workbook_auto, Reader};
-    use umya_spreadsheet::{new_file, writer};
+    use umya_spreadsheet::{new_file, writer, Color};
 
     #[test]
     fn processes_xlsx_and_returns_xlsx() {
@@ -360,6 +375,14 @@ mod tests {
         sheet.cell_mut("D2").set_value("12");
         sheet.cell_mut("E2").set_value("pe pr");
         sheet.cell_mut("F2").set_value("30");
+        sheet
+            .style_mut("F1")
+            .set_background_color(Color::COLOR_BLUE_STR);
+        sheet
+            .style_mut("F2")
+            .font_mut()
+            .color_mut()
+            .set_argb_str("00FF0000");
         writer::xlsx::write(&book, &input_path).unwrap();
 
         let input = std::fs::read(&input_path).unwrap();
@@ -378,6 +401,11 @@ mod tests {
         assert_eq!(report.processed_count, 1);
         assert_eq!(report.ok_count, 1);
         assert_eq!(report.error_count, 0);
+
+        let output_book = umya_spreadsheet::reader::xlsx::read(&output_path).unwrap();
+        let output_sheet = output_book.sheet(0).unwrap();
+        assert_eq!(output_sheet.style("G1"), output_sheet.style("F1"));
+        assert_eq!(output_sheet.style("G2"), output_sheet.style("F2"));
 
         let _ = std::fs::remove_file(input_path);
         let _ = std::fs::remove_file(output_path);
