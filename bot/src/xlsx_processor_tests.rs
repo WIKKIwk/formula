@@ -133,6 +133,59 @@ fn fills_existing_result_columns() {
     let _ = std::fs::remove_file(output_path);
 }
 
+#[test]
+fn finds_table_after_many_preface_rows() {
+    let input_path = temp_path("test_late_header", "xlsx");
+    let mut book = new_file();
+    let sheet = book.sheet_mut(0).unwrap();
+    sheet.cell_mut("A1").set_value("XATO");
+    sheet
+        .cell_mut("A2")
+        .set_value("'cpp' uchun 55 mikron topilmadi");
+
+    let header_row = 1662;
+    sheet.cell_mut((6, header_row)).set_value("kg");
+    sheet.cell_mut((7, header_row)).set_value("1 - qavati");
+    sheet.cell_mut((8, header_row)).set_value("2 - qavati");
+    sheet.cell_mut((9, header_row)).set_value("razmeri");
+    sheet.cell_mut((10, header_row)).set_value("1 - micron");
+    sheet.cell_mut((11, header_row)).set_value("2 - micron");
+    sheet
+        .cell_mut((15, header_row))
+        .set_value("HISOBLANGAN_UZUNLIK");
+    sheet.cell_mut((16, header_row)).set_value("STATUS");
+
+    let data_row = header_row + 1;
+    sheet.cell_mut((6, data_row)).set_value("300");
+    sheet.cell_mut((7, data_row)).set_value("pet");
+    sheet.cell_mut((8, data_row)).set_value("pe pr");
+    sheet.cell_mut((9, data_row)).set_value("530");
+    sheet.cell_mut((10, data_row)).set_value("12");
+    sheet.cell_mut((11, data_row)).set_value("30");
+    writer::xlsx::write(&book, &input_path).unwrap();
+
+    let input = std::fs::read(&input_path).unwrap();
+    let report = process_xlsx(&input).unwrap();
+    let output_path = temp_path("test_late_header_output", "xlsx");
+    std::fs::write(&output_path, &report.output).unwrap();
+
+    let mut workbook = open_workbook_auto(&output_path).unwrap();
+    let range = workbook.worksheet_range_at(0).unwrap().unwrap();
+    assert_eq!(
+        range.get((data_row as usize - 1, 14)).unwrap().to_string(),
+        "12000"
+    );
+    assert_eq!(
+        range.get((data_row as usize - 1, 15)).unwrap().to_string(),
+        "OK"
+    );
+    assert_eq!(report.processed_count, 1);
+    assert_eq!(report.ok_count, 1);
+
+    let _ = std::fs::remove_file(input_path);
+    let _ = std::fs::remove_file(output_path);
+}
+
 fn temp_path(name: &str, extension: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)

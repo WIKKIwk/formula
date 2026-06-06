@@ -158,7 +158,7 @@ fn next_result_column(rows: &[Vec<String>]) -> u32 {
 }
 
 fn find_existing_result_column(rows: &[Vec<String>]) -> Option<usize> {
-    rows.iter().take(20).find_map(|row| {
+    rows.iter().find_map(|row| {
         row.iter().position(|cell| {
             let normalized = normalize_header(cell);
             matches!(
@@ -229,7 +229,6 @@ fn parse_decimal(value: &str) -> Result<f64, String> {
 
 fn find_header_row(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)> {
     rows.iter()
-        .take(30)
         .enumerate()
         .find_map(|(index, row)| {
             find_columns(row)
@@ -284,7 +283,6 @@ fn find_sheet_data_layout(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)
 
     let first_data_row = rows
         .iter()
-        .take(30)
         .position(|row| looks_like_sheet_data_row(row, indexes))?;
     let sample_count = rows
         .iter()
