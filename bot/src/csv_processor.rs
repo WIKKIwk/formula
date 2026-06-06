@@ -145,7 +145,7 @@ fn get_cell(row: &[String], index: usize) -> &str {
 
 fn optional_cell(value: &str) -> Option<String> {
     let trimmed = value.trim();
-    if trimmed.is_empty() || matches!(trimmed, "-" | "--") {
+    if trimmed.is_empty() || trimmed.chars().all(|ch| ch == '-') {
         None
     } else {
         Some(trimmed.to_string())
@@ -168,10 +168,11 @@ fn parse_decimal(value: &str) -> Result<f64, String> {
 }
 
 fn find_header_row(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)> {
-    rows.iter()
-        .take(30)
-        .enumerate()
-        .find_map(|(index, row)| find_columns(row).map(|columns| (index, columns)))
+    rows.iter().take(30).enumerate().find_map(|(index, row)| {
+        find_columns(row)
+            .or_else(|| find_columns(&combined_header_row(rows, index)))
+            .map(|columns| (index, columns))
+    })
 }
 
 fn find_columns(row: &[String]) -> Option<ColumnIndexes> {
@@ -183,6 +184,23 @@ fn find_columns(row: &[String]) -> Option<ColumnIndexes> {
         second_material: find_column(row, HeaderKind::SecondMaterial)?,
         second_micron: find_column(row, HeaderKind::SecondMicron)?,
     })
+}
+
+fn combined_header_row(rows: &[Vec<String>], index: usize) -> Vec<String> {
+    let current = &rows[index];
+    let Some(previous) = index.checked_sub(1).and_then(|index| rows.get(index)) else {
+        return current.clone();
+    };
+    let len = current.len().max(previous.len());
+    (0..len)
+        .map(|column| {
+            format!(
+                "{} {}",
+                previous.get(column).map(String::as_str).unwrap_or(""),
+                current.get(column).map(String::as_str).unwrap_or("")
+            )
+        })
+        .collect()
 }
 
 fn find_column(row: &[String], kind: HeaderKind) -> Option<usize> {
@@ -252,33 +270,37 @@ fn transliterate_header(value: &str) -> String {
 
 fn header_matches(header: &str, kind: HeaderKind) -> bool {
     match kind {
-        HeaderKind::Kg => matches!(header, "kg" | "kilo" | "ogirlik" | "ves" | "weight"),
-        HeaderKind::Width => matches!(
-            header,
-            "razmer" | "razmr" | "olcham" | "size" | "uzunligi" | "dlina"
-        ),
+        HeaderKind::Kg => {
+            matches!(header, "kg" | "kilo" | "ogirlik" | "ves" | "weight") || header.ends_with("kg")
+        }
+        HeaderKind::Width => {
+            matches!(
+                header,
+                "razmer" | "razmr" | "olcham" | "size" | "uzunligi" | "dlina" | "materialrazmeri"
+            )
+        }
         HeaderKind::FirstMaterial => {
             matches!(
                 header,
-                "1qavat" | "1qatlam" | "qavat1" | "qatlam1" | "1layer"
+                "1qavat" | "1qavati" | "1qatlam" | "qavat1" | "qatlam1" | "1layer"
             )
         }
         HeaderKind::FirstMicron => {
             matches!(
                 header,
-                "1mikron" | "1micron" | "1mkrn" | "mikron1" | "micron1"
+                "1mikron" | "1micron" | "1mkrn" | "mikron1" | "micron1" | "1qmicron"
             )
         }
         HeaderKind::SecondMaterial => {
             matches!(
                 header,
-                "2qavat" | "2qatlam" | "qavat2" | "qatlam2" | "2layer"
+                "2qavat" | "2qavati" | "2qatlam" | "qavat2" | "qatlam2" | "2layer"
             )
         }
         HeaderKind::SecondMicron => {
             matches!(
                 header,
-                "2mikron" | "2micron" | "2mkrn" | "mikron2" | "micron2"
+                "2mikron" | "2micron" | "2mkrn" | "mikron2" | "micron2" | "2qmicron"
             )
         }
     }
@@ -320,5 +342,21 @@ mod tests {
 
         assert!(output.contains("12000;OK;"));
         assert_eq!(report.processed_count, 1);
+    }
+
+    #[test]
+    fn processes_two_row_sheet_headers() {
+        let input = concat!(
+            ",oym,tushgan,ish,buyurtmalar nomi,tushgan ,1-,2-,material,1-q,2-q,umumiy\n",
+            ",sana,vaqti,kod,,kg,qavati,qavati,razmeri,micron,micron,metri\n",
+            ",30/06,18;30,/1411,spring zelen,300,pet,cpp,960,12,25,8500\n",
+            ",30/06,18;31,/1412,zizi,1000,pet,pe pr,985,12,30,21000\n"
+        );
+        let report = process_csv(input.as_bytes()).unwrap();
+        let output = String::from_utf8(report.output).unwrap();
+
+        assert_eq!(report.processed_count, 2);
+        assert_eq!(report.ok_count, 2);
+        assert!(output.contains(",OK,"));
     }
 }

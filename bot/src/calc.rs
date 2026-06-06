@@ -24,14 +24,19 @@ pub fn calculate_order(order: &OrderDraft) -> Result<CalcResult, String> {
     let q3 = order.third_material.clone().unwrap_or_default();
     let m3 = order.third_micron.clone().unwrap_or_default();
     let (q_other, m_other) = merge_layers(q2, m2, q3, m3)?;
-    let first_micron = parse_micron(&m1)?;
+    let first_empty = is_empty_material(&q1);
+    let first_micron = if first_empty { 0 } else { parse_micron(&m1)? };
     let other_micron = if is_empty_material(&q_other) {
         0
     } else {
         parse_micron(&m_other)?
     };
 
-    let first_coeff = coefficient_cell(&q1, &m1, first_micron, true)?;
+    let first_coeff = if first_empty {
+        0.0
+    } else {
+        coefficient_cell(&q1, &m1, first_micron, true)?
+    };
     let other_coeff = if is_empty_material(&q_other) {
         0.0
     } else {
@@ -232,7 +237,7 @@ fn parse_micron_parts(value: &str) -> Result<Vec<u32>, String> {
 
 fn is_empty_material(material: &str) -> bool {
     let n = normalize(material);
-    n.is_empty() || matches!(n.as_str(), "--" | "-" | "yoq" | "yuq")
+    n.is_empty() || n.chars().all(|ch| ch == '-') || matches!(n.as_str(), "yoq" | "yuq")
 }
 
 fn split_parts(value: &str) -> Vec<&str> {
@@ -287,4 +292,25 @@ fn coefficient_error(material: &str, micron: u32, family: Family) -> String {
 
 fn round_up(value: f64, step: f64) -> f64 {
     (value / step).ceil() * step
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calculate_order;
+    use crate::order::OrderDraft;
+
+    #[test]
+    fn calculates_with_empty_first_layer() {
+        let order = OrderDraft {
+            kg: Some(150.0),
+            width_mm: Some(810.0),
+            first_material: Some("--".to_string()),
+            first_micron: Some("--".to_string()),
+            second_material: Some("pe".to_string()),
+            second_micron: Some("55/60".to_string()),
+            ..OrderDraft::default()
+        };
+
+        assert_eq!(calculate_order(&order).unwrap().rounded_length, 3000.0);
+    }
 }
