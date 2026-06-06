@@ -89,7 +89,6 @@ fn processes_sheet_without_header_by_data_layout() {
 
     let input = std::fs::read(&input_path).unwrap();
     let report = process_xlsx(&input).unwrap();
-
     assert_eq!(report.processed_count, 3);
     assert_eq!(report.ok_count, 3);
 
@@ -184,6 +183,33 @@ fn finds_table_after_many_preface_rows() {
 
     let _ = std::fs::remove_file(input_path);
     let _ = std::fs::remove_file(output_path);
+}
+
+#[test]
+fn detects_shifted_table_without_known_headers() {
+    let input_path = temp_path("test_shifted_layout", "xlsx");
+    let mut book = new_file();
+    let sheet = book.sheet_mut(0).unwrap();
+    sheet.cell_mut("A1").set_value("random");
+    sheet.cell_mut("C3").set_value("whatever header");
+
+    for row in 4..=6 {
+        sheet.cell_mut((3, row)).set_value("300");
+        sheet.cell_mut((4, row)).set_value("530");
+        sheet.cell_mut((5, row)).set_value("pet");
+        sheet.cell_mut((6, row)).set_value("12");
+        sheet.cell_mut((7, row)).set_value("pe pr");
+        sheet.cell_mut((8, row)).set_value("30");
+    }
+    writer::xlsx::write(&book, &input_path).unwrap();
+
+    let input = std::fs::read(&input_path).unwrap();
+    let report = process_xlsx(&input).unwrap();
+
+    assert_eq!(report.processed_count, 3);
+    assert_eq!(report.ok_count, 3);
+
+    let _ = std::fs::remove_file(input_path);
 }
 
 fn temp_path(name: &str, extension: &str) -> PathBuf {

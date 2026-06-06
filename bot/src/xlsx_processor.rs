@@ -272,28 +272,56 @@ fn find_column(row: &[String], kind: HeaderKind) -> Option<usize> {
 }
 
 fn find_sheet_data_layout(rows: &[Vec<String>]) -> Option<(usize, ColumnIndexes)> {
-    let indexes = ColumnIndexes {
-        kg: 5,
-        first_material: 6,
-        second_material: 7,
-        width: 8,
-        first_micron: 9,
-        second_micron: 10,
-    };
-
-    let first_data_row = rows
-        .iter()
-        .position(|row| looks_like_sheet_data_row(row, indexes))?;
-    let sample_count = rows
-        .iter()
-        .skip(first_data_row)
-        .take(20)
-        .filter(|row| looks_like_sheet_data_row(row, indexes))
-        .count();
-    if sample_count < 3 || first_data_row == 0 {
-        return None;
+    let column_count = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let mut best = None;
+    for start in 0..column_count.saturating_sub(5) {
+        for indexes in [
+            ColumnIndexes {
+                kg: start,
+                first_material: start + 1,
+                second_material: start + 2,
+                width: start + 3,
+                first_micron: start + 4,
+                second_micron: start + 5,
+            },
+            ColumnIndexes {
+                kg: start,
+                width: start + 1,
+                first_material: start + 2,
+                first_micron: start + 3,
+                second_material: start + 4,
+                second_micron: start + 5,
+            },
+        ] {
+            let Some(first_data_row) = rows
+                .iter()
+                .position(|row| looks_like_sheet_data_row(row, indexes))
+            else {
+                continue;
+            };
+            let shape_score = rows
+                .iter()
+                .skip(first_data_row)
+                .take(50)
+                .filter(|row| looks_like_sheet_data_row(row, indexes))
+                .count();
+            let ok_score = rows
+                .iter()
+                .skip(first_data_row)
+                .take(50)
+                .filter(|row| calculate_xlsx_row(row, indexes).is_ok())
+                .count();
+            if shape_score >= 3
+                && first_data_row > 0
+                && best.is_none_or(|(_, best_ok, best_shape, _)| {
+                    ok_score > best_ok || ok_score == best_ok && shape_score > best_shape
+                })
+            {
+                best = Some((first_data_row, ok_score, shape_score, indexes));
+            }
+        }
     }
-    Some((first_data_row - 1, indexes))
+    best.map(|(first_data_row, _, _, indexes)| (first_data_row - 1, indexes))
 }
 
 fn looks_like_sheet_data_row(row: &[String], indexes: ColumnIndexes) -> bool {
