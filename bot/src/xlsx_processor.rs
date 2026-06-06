@@ -178,6 +178,11 @@ fn copy_result_styles(
     let style = worksheet.style((source_column, row)).clone();
     for column in start_column..=start_column + 2 {
         worksheet.set_style((column, row), style.clone());
+        worksheet
+            .style_mut((column, row))
+            .font_mut()
+            .color_mut()
+            .set_argb_str("FF000000");
     }
 }
 

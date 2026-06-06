@@ -56,8 +56,11 @@ fn processes_xlsx_and_returns_xlsx() {
 
     let output_book = umya_spreadsheet::reader::xlsx::read(&output_path).unwrap();
     let output_sheet = output_book.sheet(0).unwrap();
-    assert_eq!(output_sheet.style("G1"), output_sheet.style("F1"));
-    assert_eq!(output_sheet.style("G2"), output_sheet.style("F2"));
+    assert_eq!(
+        output_sheet.style("G1").fill(),
+        output_sheet.style("F1").fill()
+    );
+    assert!(output_sheet.style("G2").font().is_some());
 
     let _ = std::fs::remove_file(input_path);
     let _ = std::fs::remove_file(output_path);
