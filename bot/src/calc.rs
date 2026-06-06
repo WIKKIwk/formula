@@ -202,7 +202,7 @@ fn material_family(material: &str) -> Result<Family, String> {
     if n.is_empty() || matches!(n.as_str(), "--" | "-" | "yoq" | "yuq") {
         return Ok(Family::Empty);
     }
-    if n.starts_with("twis") || n.starts_with("tuisim") {
+    if n.contains("twis") || n.contains("tuisim") {
         return Ok(Family::Twist);
     }
     if n.starts_with("pet") || n.starts_with("mpet") || close(&n, "pet") {
@@ -425,6 +425,7 @@ mod tests {
         assert_eq!(coefficient_single("pf", 18, false).unwrap(), 1.0);
         assert_eq!(coefficient_single("oppm", 12, false).unwrap(), 1.0);
         assert_eq!(coefficient_single("twisjem", 40, false).unwrap(), 2.0);
+        assert_eq!(coefficient_single("oq twist", 40, false).unwrap(), 2.0);
     }
 
     #[test]

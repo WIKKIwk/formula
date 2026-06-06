@@ -439,10 +439,10 @@ fn material_family(material: &str) -> Result<MaterialFamily, String> {
     if matches!(normalized.as_str(), "-" | "yoq" | "yuq" | "none" | "null") {
         return Ok(MaterialFamily::Empty);
     }
-    if normalized.starts_with("twis")
-        || normalized.starts_with("tuisim")
-        || normalized.starts_with("tuism")
-        || normalized.starts_with("tvis")
+    if normalized.contains("twis")
+        || normalized.contains("tuisim")
+        || normalized.contains("tuism")
+        || normalized.contains("tvis")
     {
         return Ok(MaterialFamily::Twist);
     }
@@ -1476,6 +1476,7 @@ mod tests {
     fn accepts_new_formula_aliases_and_interpolates() {
         assert_eq!(material_family("st01").unwrap(), MaterialFamily::FirstLayer);
         assert_eq!(material_family("twisjem").unwrap(), MaterialFamily::Twist);
+        assert_eq!(material_family("oq twist").unwrap(), MaterialFamily::Twist);
         assert_eq!(material_family("pf").unwrap(), MaterialFamily::FirstLayer);
         assert_eq!(coefficient_single("opp", 18, false).unwrap(), 1.0);
         assert_eq!(coefficient_single("oppm", 12, false).unwrap(), 1.0);
