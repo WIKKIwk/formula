@@ -15,7 +15,7 @@ pub fn order_message(order: &OrderDraft) -> Result<String, String> {
     let note = order.note.as_deref().unwrap_or("-");
 
     Ok(format!(
-        "<b>DMBO</b>\nBuyurtma raqami: №{}  {}\nMijoz: {}\nMahsulot: {}\nHolat: {}\n\n1. Material: {}\n2. Rang: {}\n3. Tiraj: {:.0} kg\n4. uzunligi: {:.0}mm\n5. Val soni: {:.0}\n\n<b>Eslatm:</b> {}",
+        "Buyurtma raqami: №{}  {}\nMijoz: {}\nMahsulot: {}\nHolat: {}\n\n1. Material: {}\n2. Rang: {}\n3. Tiraj: {:.0} kg\n4. uzunligi: {:.0}mm\n5. Rang soni: {:.0}\n\n<b>Eslatm:</b> {}",
         esc(&order_number),
         esc(&date),
         esc(&customer),
