@@ -4,6 +4,7 @@ use crate::file_handler::handle_file_document;
 use crate::formatter::{calc_message, draft_form_message, order_message};
 use crate::material_parser::parse_material_layers;
 use crate::order::OrderDraft;
+use crate::order_sheet::{build_order_sheet, sheet_filename};
 use crate::registry::{ChatRole, RegistryStore};
 use crate::state::{LoginSessions, LoginStep, Sessions, Step};
 use crate::telegram::{TelegramClient, Update};
@@ -35,7 +36,9 @@ impl BotApp {
                 Ok(updates) => {
                     for update in updates {
                         offset = Some(update.update_id + 1);
-                        self.handle_update(update).await?;
+                        if let Err(error) = self.handle_update(update).await {
+                            eprintln!("update xatosi: {error}");
+                        }
                     }
                 }
                 Err(error) => {
@@ -279,6 +282,15 @@ impl BotApp {
                     .send_message(calc_chat_id, &calc_message(&order, &result)?)
                     .await?;
                 self.telegram
+                    .send_document(
+                        calc_chat_id,
+                        &sheet_filename(&order),
+                        build_order_sheet(&order, &result)?,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "Buyurtma jadvali",
+                    )
+                    .await?;
+                self.telegram
                     .send_message(
                         chat_id,
                         "Buyurtma yuborildi. Keyingi buyurtma uchun /new yozing.",
@@ -354,6 +366,7 @@ fn apply_answer(
         Step::Color => set_text(&mut draft.color, value),
         Step::Kg => set_number(&mut draft.kg, value, "Tiraj kg"),
         Step::Width => set_number(&mut draft.width_mm, value, "Uzunligi mm"),
+        Step::RollCount => set_number(&mut draft.roll_count, value, "Val soni"),
         Step::FirstMaterial => set_text(&mut draft.first_material, value),
         Step::FirstMicron => set_text(&mut draft.first_micron, value),
         Step::SecondMaterial => set_optional_text(&mut draft.second_material, value),
@@ -395,16 +408,17 @@ fn advance_step(draft: &OrderDraft, step: &mut Step) {
         Step::MaterialDisplay => Step::Color,
         Step::Color => Step::Kg,
         Step::Kg => Step::Width,
-        Step::Width if draft.first_material.is_some() => Step::Note,
+        Step::Width if draft.first_material.is_some() => Step::RollCount,
         Step::Width => Step::FirstMaterial,
         Step::FirstMaterial => Step::FirstMicron,
         Step::FirstMicron => Step::SecondMaterial,
         Step::SecondMaterial if draft.second_material.is_none() => Step::ThirdMaterial,
         Step::SecondMaterial => Step::SecondMicron,
         Step::SecondMicron => Step::ThirdMaterial,
-        Step::ThirdMaterial if draft.third_material.is_none() => Step::Note,
+        Step::ThirdMaterial if draft.third_material.is_none() => Step::RollCount,
         Step::ThirdMaterial => Step::ThirdMicron,
-        Step::ThirdMicron => Step::Note,
+        Step::ThirdMicron => Step::RollCount,
+        Step::RollCount => Step::Note,
         Step::Note => Step::Photo,
         Step::Photo => Step::Photo,
     };

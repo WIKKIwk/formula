@@ -9,6 +9,7 @@ pub struct OrderDraft {
     pub color: Option<String>,
     pub kg: Option<f64>,
     pub width_mm: Option<f64>,
+    pub roll_count: Option<f64>,
     pub first_material: Option<String>,
     pub first_micron: Option<String>,
     pub second_material: Option<String>,
